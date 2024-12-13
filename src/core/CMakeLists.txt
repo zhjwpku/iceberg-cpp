@@ -17,11 +17,17 @@
 
 set(ICEBERG_CORE_SOURCES demo_table.cc)
 set(ICEBERG_CORE_INCLUDES "${ICEBERG_API_DIR}")
+set(ICEBERG_CORE_STATIC_LINK_LIBS iceberg_common_static)
+set(ICEBERG_CORE_SHARED_LINK_LIBS iceberg_common_shared)
 
 add_iceberg_lib(iceberg_core
                 CMAKE_PACKAGE_NAME
                 iceberg
                 SOURCES
                 ${ICEBERG_CORE_SOURCES}
+                STATIC_LINK_LIBS
+                ${ICEBERG_CORE_STATIC_LINK_LIBS}
+                SHARED_LINK_LIBS
+                ${ICEBERG_CORE_SHARED_LINK_LIBS}
                 PRIVATE_INCLUDES
                 ${ICEBERG_CORE_INCLUDES})

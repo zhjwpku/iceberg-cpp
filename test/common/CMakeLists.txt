@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-add_subdirectory(common)
-add_subdirectory(core)
-add_subdirectory(puffin)
+add_executable(common_test)
+target_sources(common_test PRIVATE status_test.cc)
+target_link_libraries(common_test PRIVATE iceberg_common_static GTest::gtest_main)
+target_include_directories(common_test PRIVATE "${ICEBERG_API_DIR}")
+add_test(NAME common_test COMMAND common_test)

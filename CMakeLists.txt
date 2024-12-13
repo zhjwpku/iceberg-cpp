@@ -28,6 +28,8 @@ project(iceberg
         DESCRIPTION "Iceberg C++ Project"
         LANGUAGES CXX)
 
+include(FetchContent)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -36,6 +38,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ICEBERG_BUILD_STATIC "Build static library" ON)
 option(ICEBERG_BUILD_SHARED "Build shared library" OFF)
 option(ICEBERG_BUILD_TESTS "Build tests" ON)
+
+option(ICEBERG_EXTRA_ERROR_CONTEXT
+       "Compile with extra error context (line numbers, code)" OFF)
+if(ICEBERG_EXTRA_ERROR_CONTEXT)
+  add_definitions(-DICEBERG_EXTRA_ERROR_CONTEXT)
+endif()
 
 include(CMakePackageConfigHelpers)
 include(CMakeParseArguments)
@@ -55,6 +63,11 @@ add_subdirectory(api)
 add_subdirectory(src)
 
 if(ICEBERG_BUILD_TESTS)
+  fetchcontent_declare(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG b514bdc898e2951020cbdca1304b75f5950d1f59 # release-1.15.2
+  )
+  fetchcontent_makeavailable(googletest)
   enable_testing()
   add_subdirectory(test)
 endif()

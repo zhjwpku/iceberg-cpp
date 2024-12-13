@@ -15,6 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-add_subdirectory(common)
-add_subdirectory(core)
-add_subdirectory(puffin)
+set(ICEBERG_COMMON_SOURCES util/string_builder.cc status.cc)
+set(ICEBERG_COMMON_INCLUDES "${ICEBERG_API_DIR}")
+
+ADD_ICEBERG_LIB(
+  iceberg_common
+  CMAKE_PACKAGE_NAME
+  iceberg_common
+  SOURCES
+  ${ICEBERG_COMMON_SOURCES}
+  PRIVATE_INCLUDES
+  ${ICEBERG_COMMON_INCLUDES})
