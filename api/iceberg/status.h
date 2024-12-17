@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstring>
+#include <format>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -22,31 +23,14 @@
 
 #include "util/compare.h"
 #include "util/macros.h"
-#include "util/string_builder.h"
-#include "util/visibility.h"
+#include "util/to_string_ostreamable.h"
 
-#ifdef ICEBERG_EXTRA_ERROR_CONTEXT
-
-/// \brief Return with given status if condition is met.
-#  define ICEBERG_RETURN_IF_(condition, status, expr) \
-    do {                                              \
-      if (ICEBERG_PREDICT_FALSE(condition)) {         \
-        ::iceberg::Status _st = (status);             \
-        _st.AddContextLine(__FILE__, __LINE__, expr); \
-        return _st;                                   \
-      }                                               \
-    } while (false)
-
-#else
-
-#  define ICEBERG_RETURN_IF_(condition, status, _) \
-    do {                                           \
-      if (ICEBERG_PREDICT_FALSE(condition)) {      \
-        return (status);                           \
-      }                                            \
-    } while (false)
-
-#endif  // ICEBERG_EXTRA_ERROR_CONTEXT
+#define ICEBERG_RETURN_IF_(condition, status, _) \
+  do {                                           \
+    if (ICEBERG_PREDICT_FALSE(condition)) {      \
+      return (status);                           \
+    }                                            \
+  } while (false)
 
 #define ICEBERG_RETURN_IF(condition, status) \
   ICEBERG_RETURN_IF_(condition, status, ICEBERG_STRINGIFY(status))
@@ -86,22 +70,16 @@ namespace iceberg {
 enum class StatusCode : char {
   OK = 0,
   OutOfMemory = 1,
-  KeyError = 2,
-  TypeError = 3,
-  Invalid = 4,
-  IOError = 5,
-  CapacityError = 6,
-  IndexError = 7,
-  Cancelled = 8,
-  NotImplemented = 9,
-  SerializationError = 10,
-  AlreadyExists = 11,
+  TypeError = 2,
+  Invalid = 3,
+  IOError = 4,
+  NotImplemented = 5,
   UnknownError = 127
 };
 
 /// \brief An opaque class that allows subsystems to retain
 /// additional information inside the Status.
-class ICEBERG_EXPORT StatusDetail {
+class StatusDetail {
  public:
   virtual ~StatusDetail() = default;
   /// \brief Return a unique id for the type of the StatusDetail
@@ -123,16 +101,14 @@ class ICEBERG_EXPORT StatusDetail {
 ///
 /// Additionally, if an error occurred, a specific error message is generally
 /// attached.
-class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Status>,
-                                            public util::ToStringOstreamable<Status> {
+class [[nodiscard]] Status : public util::EqualityComparable<Status>,
+                             public util::ToStringOstreamable<Status> {
  public:
   // Create a success status.
   constexpr Status() noexcept : state_(nullptr) {}
   ~Status() noexcept {
-    if (ICEBERG_PREDICT_FALSE(state_ != NULL)) {
-      if (!state_->is_constant) {
-        DeleteState();
-      }
+    if (ICEBERG_PREDICT_FALSE(state_ != nullptr)) {
+      DeleteState();
     }
   }
 
@@ -160,14 +136,14 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
   static Status OK() { return Status(); }
 
   template <typename... Args>
-  static Status FromArgs(StatusCode code, Args&&... args) {
-    return Status(code, util::StringBuilder(std::forward<Args>(args)...));
+  static Status FromArgs(StatusCode code, std::string_view fmt, Args&&... args) {
+    return Status(code, std::vformat(fmt, std::make_format_args(args...)));
   }
 
   template <typename... Args>
   static Status FromDetailAndArgs(StatusCode code, std::shared_ptr<StatusDetail> detail,
-                                  Args&&... args) {
-    return Status(code, util::StringBuilder(std::forward<Args>(args)...),
+                                  std::string_view fmt, Args&&... args) {
+    return Status(code, std::vformat(fmt, std::make_format_args(args...)),
                   std::move(detail));
   }
 
@@ -175,12 +151,6 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
   template <typename... Args>
   static Status OutOfMemory(Args&&... args) {
     return Status::FromArgs(StatusCode::OutOfMemory, std::forward<Args>(args)...);
-  }
-
-  /// Return an error status for failed key lookups (e.g. column name in a table)
-  template <typename... Args>
-  static Status KeyError(Args&&... args) {
-    return Status::FromArgs(StatusCode::KeyError, std::forward<Args>(args)...);
   }
 
   /// Return an error status for type errors (such as mismatching data types)
@@ -201,41 +171,11 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
     return Status::FromArgs(StatusCode::IOError, std::forward<Args>(args)...);
   }
 
-  /// Return an error status when a container's capacity would exceed its limits
-  template <typename... Args>
-  static Status CapacityError(Args&&... args) {
-    return Status::FromArgs(StatusCode::CapacityError, std::forward<Args>(args)...);
-  }
-
-  /// Return an error status when an index is out of bounds
-  template <typename... Args>
-  static Status IndexError(Args&&... args) {
-    return Status::FromArgs(StatusCode::IndexError, std::forward<Args>(args)...);
-  }
-
-  /// Return an error status for cancelled operation
-  template <typename... Args>
-  static Status Cancelled(Args&&... args) {
-    return Status::FromArgs(StatusCode::Cancelled, std::forward<Args>(args)...);
-  }
-
   /// Return an error status when an operation or a combination of operation and
   /// data types is unimplemented
   template <typename... Args>
   static Status NotImplemented(Args&&... args) {
     return Status::FromArgs(StatusCode::NotImplemented, std::forward<Args>(args)...);
-  }
-
-  /// Return an error status when some (de)serialization operation failed
-  template <typename... Args>
-  static Status SerializationError(Args&&... args) {
-    return Status::FromArgs(StatusCode::SerializationError, std::forward<Args>(args)...);
-  }
-
-  /// Return an error status for already exists errors
-  template <typename... Args>
-  static Status AlreadyExists(Args&&... args) {
-    return Status::FromArgs(StatusCode::AlreadyExists, std::forward<Args>(args)...);
   }
 
   /// Return an error status for unknown errors
@@ -249,27 +189,14 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
 
   /// Return true iff the status indicates an out-of-memory error.
   constexpr bool IsOutOfMemory() const { return code() == StatusCode::OutOfMemory; }
-  /// Return true iff the status indicates a key lookup error.
-  constexpr bool IsKeyError() const { return code() == StatusCode::KeyError; }
   /// Return true iff the status indicates a type error.
   constexpr bool IsTypeError() const { return code() == StatusCode::TypeError; }
   /// Return true iff the status indicates invalid data.
   constexpr bool IsInvalid() const { return code() == StatusCode::Invalid; }
   /// Return true iff the status indicates an IO-related failure.
   constexpr bool IsIOError() const { return code() == StatusCode::IOError; }
-  /// Return true iff the status indicates a container reaching capacity limits.
-  constexpr bool IsCapacityError() const { return code() == StatusCode::CapacityError; }
-  /// Return true iff the status indicates an out of bounds index.
-  constexpr bool IsIndexError() const { return code() == StatusCode::IndexError; }
-  /// Return true iff the status indicates a cancelled operation.
-  constexpr bool IsCancelled() const { return code() == StatusCode::Cancelled; }
   /// Return true iff the status indicates an unimplemented operation.
   constexpr bool IsNotImplemented() const { return code() == StatusCode::NotImplemented; }
-  /// Return true iff the status indicates a (de)serialization failure
-  constexpr bool IsSerializationError() const {
-    return code() == StatusCode::SerializationError;
-  }
-  constexpr bool IsAlreadyExists() const { return code() == StatusCode::AlreadyExists; }
   /// Return true iff the status indicates an unknown error.
   constexpr bool IsUnknownError() const { return code() == StatusCode::UnknownError; }
 
@@ -277,12 +204,6 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
   ///
   /// The string "OK" is returned for success.
   std::string ToString() const;
-
-  /// \brief Return a string representation of this status without
-  /// context lines suitable for printing.
-  ///
-  /// The string "OK" is returned for success.
-  std::string ToStringWithoutContextLines() const;
 
   /// \brief Return a string representation of the status code, without the message
   /// text or POSIX code information.
@@ -320,17 +241,9 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
   void Warn() const;
   void Warn(const std::string& message) const;
 
-  [[noreturn]] void Abort() const;
-  [[noreturn]] void Abort(const std::string& message) const;
-
-#ifdef ICEBERG_EXTRA_ERROR_CONTEXT
-  void AddContextLine(const char* filename, int line, const char* expr);
-#endif
-
  private:
   struct State {
     StatusCode code;
-    bool is_constant;
     std::string msg;
     std::shared_ptr<StatusDetail> detail;
   };
@@ -342,6 +255,7 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
     // On certain compilers, splitting off the slow path improves performance
     // significantly.
     delete state_;
+    state_ = nullptr;
   }
 
   void CopyFrom(const Status& s);
@@ -349,10 +263,8 @@ class ICEBERG_EXPORT [[nodiscard]] Status : public util::EqualityComparable<Stat
 };
 
 void Status::MoveFrom(Status& s) {
-  if (ICEBERG_PREDICT_FALSE(state_ != NULL)) {
-    if (!state_->is_constant) {
-      DeleteState();
-    }
+  if (ICEBERG_PREDICT_FALSE(state_ != nullptr)) {
+    DeleteState();
   }
   state_ = s.state_;
   s.state_ = nullptr;

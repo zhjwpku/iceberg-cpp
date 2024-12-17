@@ -14,9 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
 
-@PACKAGE_INIT@
-
-include("${CMAKE_CURRENT_LIST_DIR}/iceberg_commonTargets.cmake")
-check_required_components(iceberg_common)
+add_executable(core_test)
+target_sources(core_test PRIVATE status_test.cc)
+target_link_libraries(core_test PRIVATE iceberg_core_static GTest::gtest_main)
+target_include_directories(core_test PRIVATE "${ICEBERG_API_DIR}")
+add_test(NAME core_test COMMAND core_test)

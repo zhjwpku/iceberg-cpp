@@ -39,12 +39,6 @@ option(ICEBERG_BUILD_STATIC "Build static library" ON)
 option(ICEBERG_BUILD_SHARED "Build shared library" OFF)
 option(ICEBERG_BUILD_TESTS "Build tests" ON)
 
-option(ICEBERG_EXTRA_ERROR_CONTEXT
-       "Compile with extra error context (line numbers, code)" OFF)
-if(ICEBERG_EXTRA_ERROR_CONTEXT)
-  add_definitions(-DICEBERG_EXTRA_ERROR_CONTEXT)
-endif()
-
 include(CMakePackageConfigHelpers)
 include(CMakeParseArguments)
 include(BuildUtils)
