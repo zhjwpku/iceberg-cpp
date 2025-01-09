@@ -17,12 +17,12 @@
  * under the License.
  */
 
-#include "demo_table.h"
+#include "iceberg/demo_table.h"
+
+#include "iceberg/puffin.h"
 
 namespace iceberg {
 
-std::string_view DemoTable::print() const { return "DemoTable"; }
-
-std::unique_ptr<Table> Table::create() { return std::make_unique<DemoTable>(); }
+std::string DemoTable::print() const { return "DemoTable"; }
 
 }  // namespace iceberg

@@ -17,15 +17,20 @@
  * under the License.
  */
 
-#include <iostream>
+#pragma once
 
-#include "iceberg/arrow/demo_arrow.h"
-#include "iceberg/demo_table.h"
-#include "iceberg/puffin/demo_puffin.h"
+#include <string>
 
-int main() {
-  std::cout << iceberg::DemoTable().print() << std::endl;
-  std::cout << iceberg::puffin::DemoPuffin().print() << std::endl;
-  std::cout << iceberg::arrow::DemoArrow().print() << std::endl;
-  return 0;
-}
+#include "iceberg/arrow/iceberg_arrow_export.h"
+#include "iceberg/table.h"
+
+namespace iceberg::arrow {
+
+class ICEBERG_ARROW_EXPORT DemoArrow : public Table {
+ public:
+  DemoArrow() = default;
+  ~DemoArrow() override = default;
+  std::string print() const override;
+};
+
+}  // namespace iceberg::arrow

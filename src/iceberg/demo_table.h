@@ -19,16 +19,16 @@
 
 #pragma once
 
-#include "iceberg/puffin.h"
+#include "iceberg/table.h"
 
 namespace iceberg {
 
-class DemoPuffin : public Puffin {
+class ICEBERG_EXPORT DemoTable : public Table {
  public:
-  DemoPuffin() = default;
-  ~DemoPuffin() override = default;
+  DemoTable() = default;
+  ~DemoTable() override = default;
 
-  std::string_view print() const override;
+  std::string print() const override;
 };
 
 }  // namespace iceberg

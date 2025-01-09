@@ -17,12 +17,18 @@
  * under the License.
  */
 
-#include "demo_puffin.h"
+#pragma once
 
-namespace iceberg {
+#include "iceberg/puffin.h"
+#include "iceberg/puffin/iceberg_puffin_export.h"
 
-std::string_view DemoPuffin::print() const { return "DemoPuffin"; }
+namespace iceberg::puffin {
 
-std::unique_ptr<Puffin> Puffin::create() { return std::make_unique<DemoPuffin>(); }
+class ICEBERG_PUFFIN_EXPORT DemoPuffin : public Puffin {
+ public:
+  DemoPuffin() = default;
+  ~DemoPuffin() override = default;
+  std::string print() const override;
+};
 
-}  // namespace iceberg
+}  // namespace iceberg::puffin

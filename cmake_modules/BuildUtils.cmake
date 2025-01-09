@@ -18,6 +18,8 @@
 # Borrowed the file from Apache Arrow:
 # https://github.com/apache/arrow/blob/main/cpp/cmake_modules/BuildUtils.cmake
 
+include(CMakePackageConfigHelpers)
+
 function(iceberg_install_cmake_package PACKAGE_NAME EXPORT_NAME)
   set(CONFIG_CMAKE "${PACKAGE_NAME}Config.cmake")
   set(BUILT_CONFIG_CMAKE "${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_CMAKE}")
@@ -37,12 +39,11 @@ function(iceberg_install_cmake_package PACKAGE_NAME EXPORT_NAME)
           FILE "${TARGETS_CMAKE}")
 endfunction()
 
-function(ADD_ICEBERG_LIB LIB_NAME)
+function(add_iceberg_lib LIB_NAME)
   set(options)
   set(one_value_args
       BUILD_SHARED
       BUILD_STATIC
-      CMAKE_PACKAGE_NAME
       INSTALL_ARCHIVE_DIR
       INSTALL_LIBRARY_DIR
       INSTALL_RUNTIME_DIR
@@ -146,8 +147,8 @@ function(ADD_ICEBERG_LIB LIB_NAME)
                                  "$<INSTALL_INTERFACE:${ARG_SHARED_INSTALL_INTERFACE_LIBS}>"
                           PRIVATE ${ARG_SHARED_PRIVATE_LINK_LIBS})
 
-    install(TARGETS ${LIB_NAME}_shared ${INSTALL_IS_OPTIONAL}
-            EXPORT ${LIB_NAME}_targets
+    install(TARGETS ${LIB_NAME}_shared
+            EXPORT iceberg_targets
             ARCHIVE DESTINATION ${INSTALL_ARCHIVE_DIR}
             LIBRARY DESTINATION ${INSTALL_LIBRARY_DIR}
             RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
@@ -201,8 +202,8 @@ function(ADD_ICEBERG_LIB LIB_NAME)
                             PUBLIC "$<BUILD_INTERFACE:${ARG_STATIC_LINK_LIBS}>")
     endif()
 
-    install(TARGETS ${LIB_NAME}_static ${INSTALL_IS_OPTIONAL}
-            EXPORT ${LIB_NAME}_targets
+    install(TARGETS ${LIB_NAME}_static
+            EXPORT iceberg_targets
             ARCHIVE DESTINATION ${INSTALL_ARCHIVE_DIR}
             LIBRARY DESTINATION ${INSTALL_LIBRARY_DIR}
             RUNTIME DESTINATION ${INSTALL_RUNTIME_DIR}
@@ -210,8 +211,16 @@ function(ADD_ICEBERG_LIB LIB_NAME)
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   endif()
 
-  if(ARG_CMAKE_PACKAGE_NAME)
-    iceberg_install_cmake_package(${ARG_CMAKE_PACKAGE_NAME} ${LIB_NAME}_targets)
+  # generate export header file
+  if(BUILD_SHARED)
+    generate_export_header(${LIB_NAME}_shared BASE_NAME ${LIB_NAME})
+    if(BUILD_STATIC)
+      string(TOUPPER ${LIB_NAME} LIB_NAME_UPPER)
+      target_compile_definitions(${LIB_NAME}_static
+                                 PUBLIC ${LIB_NAME_UPPER}_STATIC_DEFINE)
+    endif()
+  elseif(BUILD_STATIC)
+    generate_export_header(${LIB_NAME}_static BASE_NAME ${LIB_NAME})
   endif()
 
   # Modify variable in calling scope
@@ -220,4 +229,29 @@ function(ADD_ICEBERG_LIB LIB_NAME)
         ${${ARG_OUTPUTS}}
         PARENT_SCOPE)
   endif()
+endfunction()
+
+function(iceberg_install_all_headers PATH)
+  set(options)
+  set(one_value_args)
+  set(multi_value_args PATTERN)
+  cmake_parse_arguments(ARG
+                        "${options}"
+                        "${one_value_args}"
+                        "${multi_value_args}"
+                        ${ARGN})
+  if(NOT ARG_PATTERN)
+    set(ARG_PATTERN "*.h" "*.hpp")
+  endif()
+  file(GLOB CURRENT_DIRECTORY_HEADERS ${ARG_PATTERN})
+
+  set(PUBLIC_HEADERS)
+  foreach(HEADER ${CURRENT_DIRECTORY_HEADERS})
+    get_filename_component(HEADER_BASENAME ${HEADER} NAME)
+    if(HEADER_BASENAME MATCHES "internal")
+      continue()
+    endif()
+    list(APPEND PUBLIC_HEADERS ${HEADER})
+  endforeach()
+  install(FILES ${PUBLIC_HEADERS} DESTINATION "${ICEBERG_INSTALL_INCLUDEDIR}/${PATH}")
 endfunction()

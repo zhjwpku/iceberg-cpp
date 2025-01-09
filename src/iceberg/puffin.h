@@ -19,16 +19,16 @@
 
 #pragma once
 
-#include <memory>
-#include <string_view>
+#include <string>
+
+#include "iceberg/iceberg_export.h"
 
 namespace iceberg {
 
-class Table {
+class ICEBERG_EXPORT Puffin {
  public:
-  virtual ~Table() = default;
-  virtual std::string_view print() const = 0;
-  static std::unique_ptr<Table> create();
+  virtual ~Puffin() = default;
+  virtual std::string print() const = 0;
 };
 
 }  // namespace iceberg

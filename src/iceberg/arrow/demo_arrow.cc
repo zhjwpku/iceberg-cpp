@@ -17,18 +17,17 @@
  * under the License.
  */
 
-#pragma once
+#include "iceberg/arrow/demo_arrow.h"
 
-#include "iceberg/table.h"
+#include <arrow/config.h>
 
-namespace iceberg {
+#include "iceberg/demo_table.h"
 
-class DemoTable : public Table {
- public:
-  DemoTable() = default;
-  ~DemoTable() override = default;
+namespace iceberg::arrow {
 
-  std::string_view print() const override;
-};
+std::string DemoArrow::print() const {
+  return DemoTable().print() +
+         ", Arrow version: " + ::arrow::GetBuildInfo().version_string;
+}
 
-}  // namespace iceberg
+}  // namespace iceberg::arrow
