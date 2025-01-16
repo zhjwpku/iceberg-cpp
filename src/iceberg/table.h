@@ -28,7 +28,7 @@ namespace iceberg {
 class ICEBERG_EXPORT Table {
  public:
   virtual ~Table() = default;
-  virtual std::string print() const = 0;
+  virtual std::string Print() const = 0;
 };
 
 }  // namespace iceberg

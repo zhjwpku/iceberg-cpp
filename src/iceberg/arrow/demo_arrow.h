@@ -30,7 +30,7 @@ class ICEBERG_ARROW_EXPORT DemoArrow : public Table {
  public:
   DemoArrow() = default;
   ~DemoArrow() override = default;
-  std::string print() const override;
+  std::string Print() const override;
 };
 
 }  // namespace iceberg::arrow
