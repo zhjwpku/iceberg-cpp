@@ -25,7 +25,7 @@
 
 int main() {
   std::cout << iceberg::DemoTable().Print() << std::endl;
-  std::cout << iceberg::puffin::DemoPuffin().Print() << std::endl;
+  std::cout << iceberg::puffin::DemoPuffin().printPuffin() << std::endl;
   std::cout << iceberg::arrow::DemoArrow().Print() << std::endl;
   return 0;
 }
