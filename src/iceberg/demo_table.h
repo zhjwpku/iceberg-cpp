@@ -28,7 +28,7 @@ class ICEBERG_EXPORT DemoTable : public Table {
   DemoTable() = default;
   ~DemoTable() override = default;
 
-  std::string print() const override;
+  std::string Print() const override;
 };
 
 }  // namespace iceberg

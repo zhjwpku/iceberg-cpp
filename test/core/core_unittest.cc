@@ -23,5 +23,5 @@
 
 TEST(TableTest, TestTableCons) {
   auto table = iceberg::DemoTable();
-  EXPECT_EQ(table.print(), "DemoTable");
+  EXPECT_EQ(table.Print(), "DemoTable");
 }

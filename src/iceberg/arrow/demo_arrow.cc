@@ -25,8 +25,8 @@
 
 namespace iceberg::arrow {
 
-std::string DemoArrow::print() const {
-  return DemoTable().print() +
+std::string DemoArrow::Print() const {
+  return DemoTable().Print() +
          ", Arrow version: " + ::arrow::GetBuildInfo().version_string;
 }
 

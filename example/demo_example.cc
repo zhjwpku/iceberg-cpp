@@ -24,8 +24,8 @@
 #include "iceberg/puffin/demo_puffin.h"
 
 int main() {
-  std::cout << iceberg::DemoTable().print() << std::endl;
-  std::cout << iceberg::puffin::DemoPuffin().print() << std::endl;
-  std::cout << iceberg::arrow::DemoArrow().print() << std::endl;
+  std::cout << iceberg::DemoTable().Print() << std::endl;
+  std::cout << iceberg::puffin::DemoPuffin().Print() << std::endl;
+  std::cout << iceberg::arrow::DemoArrow().Print() << std::endl;
   return 0;
 }

@@ -23,6 +23,6 @@
 
 namespace iceberg {
 
-std::string DemoTable::print() const { return "DemoTable"; }
+std::string DemoTable::Print() const { return "DemoTable"; }
 
 }  // namespace iceberg

@@ -21,6 +21,6 @@
 
 namespace iceberg::puffin {
 
-std::string DemoPuffin::print() const { return "DemoPuffin"; }
+std::string DemoPuffin::Print() const { return "DemoPuffin"; }
 
 }  // namespace iceberg::puffin
