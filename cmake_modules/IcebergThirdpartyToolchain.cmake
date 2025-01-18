@@ -126,3 +126,44 @@ endfunction()
 if(ICEBERG_ARROW)
   resolve_arrow_dependency()
 endif()
+
+# ----------------------------------------------------------------------
+# Apache Avro
+
+function(resolve_avro_dependency)
+  prepare_fetchcontent()
+
+  set(AVRO_USE_BOOST
+      OFF
+      CACHE BOOL "" FORCE)
+
+  set(AVRO_BUILD_EXECUTABLES
+      OFF
+      CACHE BOOL "" FORCE)
+
+  set(AVRO_BUILD_TESTS
+      OFF
+      CACHE BOOL "" FORCE)
+
+  fetchcontent_declare(Avro
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       GIT_REPOSITORY https://github.com/apache/avro.git
+                       GIT_TAG 1144cb7322bab4cd1c8bf330a9c504a0d4252b56
+                       SOURCE_SUBDIR
+                       lang/c++
+                       FIND_PACKAGE_ARGS
+                       NAMES
+                       Avro
+                       CONFIG)
+
+  fetchcontent_makeavailable(Avro)
+
+  if(avro_SOURCE_DIR)
+    if(NOT TARGET Avro::avro_static)
+      add_library(Avro::avro_static INTERFACE IMPORTED)
+      target_link_libraries(Avro::avro_static INTERFACE avrocpp_s)
+    endif()
+  endif()
+endfunction()
+
+resolve_avro_dependency()
