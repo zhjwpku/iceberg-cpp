@@ -173,14 +173,14 @@ function(resolve_avro_dependency)
 
     if(ICEBERG_BUILD_STATIC)
       install(TARGETS avrocpp_s
-              EXPORT iceberg_targets
+              EXPORT fmt-targets
               RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
               ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
               LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
     endif()
     if(ICEBERG_BUILD_SHARED)
       install(TARGETS avrocpp
-              EXPORT iceberg_targets
+              EXPORT fmt-targets
               RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
               ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
               LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")

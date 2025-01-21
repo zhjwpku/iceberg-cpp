@@ -34,17 +34,14 @@ list(APPEND ICEBERG_AVRO_STATIC_BUILD_INTERFACE_LIBS
 list(APPEND ICEBERG_AVRO_SHARED_BUILD_INTERFACE_LIBS
      "$<IF:$<TARGET_EXISTS:iceberg_shared>,iceberg_shared,iceberg_static>"
      Avro::avro_shared)
-list(APPEND ICEBERG_AVRO_STATIC_INSTALL_INTERFACE_LIBS Iceberg::avro_static)
-list(APPEND ICEBERG_AVRO_SHARED_INSTALL_INTERFACE_LIBS Iceberg::avro_shared)
-
 list(APPEND
      ICEBERG_AVRO_STATIC_INSTALL_INTERFACE_LIBS
      "$<IF:$<TARGET_EXISTS:Iceberg::iceberg_static>,Iceberg::iceberg_static,Iceberg::iceberg_shared>"
-)
+     Iceberg::avro_static)
 list(APPEND
      ICEBERG_AVRO_SHARED_INSTALL_INTERFACE_LIBS
      "$<IF:$<TARGET_EXISTS:Iceberg::iceberg_shared>,Iceberg::iceberg_shared,Iceberg::iceberg_static>"
-)
+     Iceberg::avro_shared)
 
 add_iceberg_lib(iceberg_avro
                 SOURCES
