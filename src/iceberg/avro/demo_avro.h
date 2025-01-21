@@ -17,24 +17,20 @@
  * under the License.
  */
 
-#include <gtest/gtest.h>
-#include <iceberg/avro/demo_avro.h>
+#pragma once
 
-TEST(AVROTest, TestDemoAvro) {
-  std::string expected =
-      "{\n\
-    \"type\": \"record\",\n\
-    \"name\": \"testrecord\",\n\
-    \"fields\": [\n\
-        {\n\
-            \"name\": \"testbytes\",\n\
-            \"type\": \"bytes\",\n\
-            \"default\": \"\"\n\
-        }\n\
-    ]\n\
-}\n\
-";
+#include <string>
 
-  auto avro = iceberg::DemoAvro();
-  EXPECT_EQ(avro.print(), expected);
-}
+#include "iceberg/avro.h"
+#include "iceberg/avro/iceberg_avro_export.h"
+
+namespace iceberg {
+
+class ICEBERG_AVRO_EXPORT DemoAvro : public Avro {
+ public:
+  DemoAvro() = default;
+  ~DemoAvro() override = default;
+  std::string print() const override;
+};
+
+}  // namespace iceberg

@@ -17,16 +17,11 @@
 
 set(ICEBERG_SOURCES demo_table.cc)
 
-set(ICEBERG_AVRO_STATIC_BUILD_LIBS)
-list(APPEND ICEBERG_AVRO_STATIC_BUILD_LIBS Avro::avro_static)
-
 add_iceberg_lib(iceberg
                 SOURCES
                 ${ICEBERG_SOURCES}
                 PRIVATE_INCLUDES
-                ${ICEBERG_INCLUDES}
-                STATIC_LINK_LIBS
-                ${ICEBERG_AVRO_STATIC_BUILD_LIBS})
+                ${ICEBERG_INCLUDES})
 
 iceberg_install_all_headers(iceberg)
 
@@ -34,6 +29,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/iceberg_export.h
         DESTINATION ${ICEBERG_INSTALL_INCLUDEDIR}/iceberg)
 
 add_subdirectory(arrow)
+add_subdirectory(avro)
 add_subdirectory(puffin)
 
 iceberg_install_cmake_package(Iceberg iceberg_targets)

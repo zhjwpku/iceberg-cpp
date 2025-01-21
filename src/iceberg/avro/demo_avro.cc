@@ -17,11 +17,18 @@
  * under the License.
  */
 
-#include <gtest/gtest.h>
-#include <iceberg/avro/demo_avro.h>
+#include "iceberg/avro/demo_avro.h"
 
-TEST(AVROTest, TestDemoAvro) {
-  std::string expected =
+#include <sstream>
+
+#include "avro/Compiler.hh"
+#include "avro/ValidSchema.hh"
+#include "iceberg/demo_table.h"
+
+namespace iceberg {
+
+std::string DemoAvro::print() const {
+  std::string input =
       "{\n\
     \"type\": \"record\",\n\
     \"name\": \"testrecord\",\n\
@@ -35,6 +42,11 @@ TEST(AVROTest, TestDemoAvro) {
 }\n\
 ";
 
-  auto avro = iceberg::DemoAvro();
-  EXPECT_EQ(avro.print(), expected);
+  avro::ValidSchema schema = avro::compileJsonSchemaFromString(input);
+  std::ostringstream actual;
+  schema.toJson(actual);
+
+  return actual.str();
 }
+
+}  // namespace iceberg

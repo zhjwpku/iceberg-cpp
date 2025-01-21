@@ -162,8 +162,32 @@ function(resolve_avro_dependency)
     if(NOT TARGET Avro::avro_static)
       add_library(Avro::avro_static INTERFACE IMPORTED)
       target_link_libraries(Avro::avro_static INTERFACE avrocpp_s)
+      set_target_properties(avrocpp_s PROPERTIES OUTPUT_NAME "iceberg_vendored_avro")
+    endif()
+
+    if(NOT TARGET Avro::avro_shared)
+      add_library(Avro::avro_shared INTERFACE IMPORTED)
+      target_link_libraries(Avro::avro_shared INTERFACE avrocpp)
+      set_target_properties(avrocpp PROPERTIES OUTPUT_NAME "iceberg_vendored_avro")
+    endif()
+
+    if(ICEBERG_BUILD_STATIC)
+      install(TARGETS avrocpp_s
+              EXPORT iceberg_targets
+              RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+              ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+              LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
+    endif()
+    if(ICEBERG_BUILD_SHARED)
+      install(TARGETS avrocpp
+              EXPORT iceberg_targets
+              RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+              ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+              LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
     endif()
   endif()
 endfunction()
 
-resolve_avro_dependency()
+if(ICEBERG_AVRO)
+  resolve_avro_dependency()
+endif()
