@@ -25,12 +25,23 @@ build_dir=${1}/build
 mkdir ${build_dir}
 pushd ${build_dir}
 
-cmake \
-    -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-${ICEBERG_HOME}} \
-    -DICEBERG_BUILD_STATIC=ON \
-    -DICEBERG_BUILD_SHARED=ON \
-    ${source_dir}
-cmake --build . --target install
+CMAKE_ARGS=(
+    "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-${ICEBERG_HOME}}"
+    "-DICEBERG_BUILD_STATIC=ON"
+    "-DICEBERG_BUILD_SHARED=ON"
+    "-DCMAKE_BUILD_TYPE=Debug"
+)
+
+BUILD_ARGS=()
+
+# Add Windows-specific toolchain file if on Windows
+if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
+    CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+    BUILD_ARGS+=("--config Debug")
+fi
+
+cmake "${CMAKE_ARGS[@]}" ${source_dir}
+cmake --build . "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}" --target install
 ctest --output-on-failure -C Debug
 
 popd

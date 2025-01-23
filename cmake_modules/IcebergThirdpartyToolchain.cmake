@@ -171,6 +171,7 @@ function(resolve_avro_dependency)
 
     set(AVRO_VENDORED TRUE)
     set_target_properties(avrocpp_s PROPERTIES OUTPUT_NAME "iceberg_vendored_avrocpp")
+    set_target_properties(avrocpp_s PROPERTIES POSITION_INDEPENDENT_CODE ON)
     install(TARGETS avrocpp_s
             EXPORT iceberg_targets
             RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
@@ -178,7 +179,11 @@ function(resolve_avro_dependency)
             LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
 
     # TODO: add vendored ZLIB and Snappy support
-    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES ZLIB Snappy)
+    find_package(Snappy CONFIG)
+    if(Snappy_FOUND)
+      list(APPEND ICEBERG_SYSTEM_DEPENDENCIES Snappy)
+    endif()
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES ZLIB)
   else()
     set(AVRO_VENDORED FALSE)
     list(APPEND ICEBERG_SYSTEM_DEPENDENCIES Avro)
