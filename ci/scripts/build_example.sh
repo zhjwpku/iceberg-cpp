@@ -25,21 +25,27 @@ build_dir=${1}/build
 mkdir ${build_dir}
 pushd ${build_dir}
 
+is_windows() {
+    [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]
+}
+
 CMAKE_ARGS=(
     "-DCMAKE_PREFIX_PATH=${CMAKE_INSTALL_PREFIX:-${ICEBERG_HOME}}"
-    "-DCMAKE_BUILD_TYPE=Debug"
 )
 
-BUILD_ARGS=()
-
-# Add Windows-specific toolchain file if on Windows
-if [[ "${OSTYPE}" == "msys" || "${OSTYPE}" == "win32" ]]; then
+if is_windows; then
     CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-    BUILD_ARGS+=("--config Debug")
+    CMAKE_ARGS+=("-DCMAKE_BUILD_TYPE=Release")
+else
+    CMAKE_ARGS+=("-DCMAKE_BUILD_TYPE=Debug")
 fi
 
 cmake "${CMAKE_ARGS[@]}" ${source_dir}
-cmake --build . "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}"
+if is_windows; then
+  cmake --build . --config Release
+else
+  cmake --build .
+fi
 
 popd
 
