@@ -19,6 +19,7 @@
 
 #include "iceberg/demo_table.h"
 
+#include "iceberg/avro.h"  // include to export symbols
 #include "iceberg/puffin.h"
 
 namespace iceberg {

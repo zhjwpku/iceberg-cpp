@@ -25,7 +25,7 @@
 #include "avro/ValidSchema.hh"
 #include "iceberg/demo_table.h"
 
-namespace iceberg {
+namespace iceberg::avro {
 
 std::string DemoAvro::print() const {
   std::string input =
@@ -42,11 +42,11 @@ std::string DemoAvro::print() const {
 }\n\
 ";
 
-  avro::ValidSchema schema = avro::compileJsonSchemaFromString(input);
+  ::avro::ValidSchema schema = ::avro::compileJsonSchemaFromString(input);
   std::ostringstream actual;
   schema.toJson(actual);
 
   return actual.str();
 }
 
-}  // namespace iceberg
+}  // namespace iceberg::avro
