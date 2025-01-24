@@ -24,7 +24,7 @@
 #include "iceberg/avro.h"
 #include "iceberg/avro/iceberg_avro_export.h"
 
-namespace iceberg {
+namespace iceberg::avro {
 
 class ICEBERG_AVRO_EXPORT DemoAvro : public Avro {
  public:
@@ -33,4 +33,4 @@ class ICEBERG_AVRO_EXPORT DemoAvro : public Avro {
   std::string print() const override;
 };
 
-}  // namespace iceberg
+}  // namespace iceberg::avro

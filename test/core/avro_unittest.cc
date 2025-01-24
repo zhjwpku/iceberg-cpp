@@ -35,6 +35,6 @@ TEST(AVROTest, TestDemoAvro) {
 }\n\
 ";
 
-  auto avro = iceberg::DemoAvro();
+  auto avro = iceberg::avro::DemoAvro();
   EXPECT_EQ(avro.print(), expected);
 }
