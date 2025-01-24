@@ -39,7 +39,7 @@ list(APPEND
      "$<IF:$<TARGET_EXISTS:Avro::avrocpp_shared>,Avro::avrocpp_shared,Avro::avrocpp_static>"
 )
 
-if(ARROW_VENDORED)
+if(AVRO_VENDORED)
   list(APPEND ICEBERG_AVRO_STATIC_INSTALL_INTERFACE_LIBS Iceberg::avrocpp_s)
   list(APPEND ICEBERG_AVRO_SHARED_INSTALL_INTERFACE_LIBS Iceberg::avrocpp_s)
 else()
