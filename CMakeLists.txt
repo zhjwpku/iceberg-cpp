@@ -37,6 +37,7 @@ option(ICEBERG_BUILD_STATIC "Build static library" ON)
 option(ICEBERG_BUILD_SHARED "Build shared library" OFF)
 option(ICEBERG_BUILD_TESTS "Build tests" ON)
 option(ICEBERG_ARROW "Build Arrow" ON)
+option(ICEBERG_AVRO "Build Avro" ON)
 
 include(GNUInstallDirs)
 include(FetchContent)

@@ -126,3 +126,77 @@ endfunction()
 if(ICEBERG_ARROW)
   resolve_arrow_dependency()
 endif()
+
+# ----------------------------------------------------------------------
+# Apache Avro
+
+function(resolve_avro_dependency)
+  prepare_fetchcontent()
+
+  set(AVRO_USE_BOOST
+      OFF
+      CACHE BOOL "" FORCE)
+
+  set(AVRO_BUILD_EXECUTABLES
+      OFF
+      CACHE BOOL "" FORCE)
+
+  set(AVRO_BUILD_TESTS
+      OFF
+      CACHE BOOL "" FORCE)
+
+  fetchcontent_declare(Avro
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       # TODO: switch to upstream once the PR below is merged
+                       # https://github.com/apache/avro/pull/3299
+                       # Eventually, we should switch to Apache Avro 1.3.0.
+                       GIT_REPOSITORY https://github.com/wgtmac/avro.git
+                       GIT_TAG 0aa7adf87a9af6d472a3e9d5966c5e7f1d6baa7d
+                       SOURCE_SUBDIR
+                       lang/c++
+                       FIND_PACKAGE_ARGS
+                       NAMES
+                       Avro
+                       CONFIG)
+
+  fetchcontent_makeavailable(Avro)
+
+  if(avro_SOURCE_DIR)
+    if(NOT TARGET Avro::avrocpp_static)
+      add_library(Avro::avrocpp_static INTERFACE IMPORTED)
+      target_link_libraries(Avro::avrocpp_static INTERFACE avrocpp_s)
+      target_include_directories(Avro::avrocpp_static
+                                 INTERFACE ${avro_BINARY_DIR} ${avro_SOURCE_DIR}/lang/c++)
+    endif()
+
+    set(AVRO_VENDORED TRUE)
+    set_target_properties(avrocpp_s PROPERTIES OUTPUT_NAME "iceberg_vendored_avrocpp")
+    set_target_properties(avrocpp_s PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    install(TARGETS avrocpp_s
+            EXPORT iceberg_targets
+            RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+            ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
+
+    # TODO: add vendored ZLIB and Snappy support
+    find_package(Snappy CONFIG)
+    if(Snappy_FOUND)
+      list(APPEND ICEBERG_SYSTEM_DEPENDENCIES Snappy)
+    endif()
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES ZLIB)
+  else()
+    set(AVRO_VENDORED FALSE)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES Avro)
+  endif()
+
+  set(ICEBERG_SYSTEM_DEPENDENCIES
+      ${ICEBERG_SYSTEM_DEPENDENCIES}
+      PARENT_SCOPE)
+  set(AVRO_VENDORED
+      ${AVRO_VENDORED}
+      PARENT_SCOPE)
+endfunction()
+
+if(ICEBERG_AVRO)
+  resolve_avro_dependency()
+endif()

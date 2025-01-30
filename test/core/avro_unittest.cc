@@ -17,13 +17,24 @@
  * under the License.
  */
 
-#include "iceberg/demo_table.h"
+#include <gtest/gtest.h>
+#include <iceberg/avro/demo_avro.h>
 
-#include "iceberg/avro.h"  // include to export symbols
-#include "iceberg/puffin.h"
+TEST(AVROTest, TestDemoAvro) {
+  std::string expected =
+      "{\n\
+    \"type\": \"record\",\n\
+    \"name\": \"testrecord\",\n\
+    \"fields\": [\n\
+        {\n\
+            \"name\": \"testbytes\",\n\
+            \"type\": \"bytes\",\n\
+            \"default\": \"\"\n\
+        }\n\
+    ]\n\
+}\n\
+";
 
-namespace iceberg {
-
-std::string DemoTable::print() const { return "DemoTable"; }
-
-}  // namespace iceberg
+  auto avro = iceberg::avro::DemoAvro();
+  EXPECT_EQ(avro.print(), expected);
+}

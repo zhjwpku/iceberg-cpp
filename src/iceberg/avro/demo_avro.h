@@ -17,13 +17,20 @@
  * under the License.
  */
 
-#include "iceberg/demo_table.h"
+#pragma once
 
-#include "iceberg/avro.h"  // include to export symbols
-#include "iceberg/puffin.h"
+#include <string>
 
-namespace iceberg {
+#include "iceberg/avro.h"
+#include "iceberg/avro/iceberg_avro_export.h"
 
-std::string DemoTable::print() const { return "DemoTable"; }
+namespace iceberg::avro {
 
-}  // namespace iceberg
+class ICEBERG_AVRO_EXPORT DemoAvro : public Avro {
+ public:
+  DemoAvro() = default;
+  ~DemoAvro() override = default;
+  std::string print() const override;
+};
+
+}  // namespace iceberg::avro
