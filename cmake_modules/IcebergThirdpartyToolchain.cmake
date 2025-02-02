@@ -147,11 +147,9 @@ function(resolve_avro_dependency)
 
   fetchcontent_declare(Avro
                        ${FC_DECLARE_COMMON_OPTIONS}
-                       # TODO: switch to upstream once the PR below is merged
-                       # https://github.com/apache/avro/pull/3299
-                       # Eventually, we should switch to Apache Avro 1.3.0.
-                       GIT_REPOSITORY https://github.com/wgtmac/avro.git
-                       GIT_TAG 0aa7adf87a9af6d472a3e9d5966c5e7f1d6baa7d
+                       # TODO: switch to Apache Avro 1.13.0 once released.
+                       GIT_REPOSITORY https://github.com/apache/avro.git
+                       GIT_TAG c75e6d59fbacd05df666665d9c8b7e3274cf0399
                        SOURCE_SUBDIR
                        lang/c++
                        FIND_PACKAGE_ARGS
