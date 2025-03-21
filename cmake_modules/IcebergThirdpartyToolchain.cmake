@@ -65,6 +65,10 @@ function(resolve_arrow_dependency)
   set(ARROW_BUILD_STATIC
       ON
       CACHE BOOL "" FORCE)
+  # To workaround https://github.com/apache/arrow/pull/45513
+  set(ARROW_IPC
+      ON
+      CACHE BOOL "" FORCE)
   set(ARROW_FILESYSTEM
       OFF
       CACHE BOOL "" FORCE)
@@ -198,3 +202,27 @@ endfunction()
 if(ICEBERG_AVRO)
   resolve_avro_dependency()
 endif()
+
+# ----------------------------------------------------------------------
+# Nanoarrow
+
+# It is also possible to vendor nanoarrow using the bundled source code.
+function(resolve_nanoarrow_dependency)
+  prepare_fetchcontent()
+
+  fetchcontent_declare(nanoarrow
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       URL "https://dlcdn.apache.org/arrow/apache-arrow-nanoarrow-0.6.0/apache-arrow-nanoarrow-0.6.0.tar.gz"
+  )
+  fetchcontent_makeavailable(nanoarrow)
+
+  set_target_properties(nanoarrow PROPERTIES OUTPUT_NAME "iceberg_vendored_nanoarrow"
+                                             POSITION_INDEPENDENT_CODE ON)
+  install(TARGETS nanoarrow
+          EXPORT iceberg_targets
+          RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+          ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+          LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
+endfunction()
+
+resolve_nanoarrow_dependency()
