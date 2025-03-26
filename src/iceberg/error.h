@@ -17,13 +17,27 @@
  * under the License.
  */
 
-#include "iceberg/demo_table.h"
+#pragma once
 
-#include "iceberg/avro.h"  // include to export symbols
-#include "iceberg/puffin.h"
+#include <string>
+
+#include "iceberg/iceberg_export.h"
 
 namespace iceberg {
 
-std::string DemoTable::print() const { return "DemoTable"; }
+/// \brief Error types for iceberg.
+/// TODO: add more and sort them based on some rules.
+enum class ErrorKind {
+  kNoSuchNamespace,
+  kAlreadyExists,
+  kNoSuchTable,
+  kCommitStateUnknown,
+};
+
+/// \brief Error with a kind and a message.
+struct ICEBERG_EXPORT [[nodiscard]] Error {
+  ErrorKind kind;
+  std::string message;
+};
 
 }  // namespace iceberg

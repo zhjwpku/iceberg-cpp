@@ -17,36 +17,17 @@
  * under the License.
  */
 
-#include "iceberg/avro/demo_avro.h"
-
-#include <sstream>
-
-#include "avro/Compiler.hh"
-#include "avro/ValidSchema.hh"
 #include "iceberg/demo.h"
 
-namespace iceberg::avro {
+#include "iceberg/avro.h"  // include to export symbols
+#include "iceberg/catalog.h"
+#include "iceberg/location_provider.h"
+#include "iceberg/puffin.h"
+#include "iceberg/table.h"
+#include "iceberg/transaction.h"
 
-std::string DemoAvro::print() const {
-  std::string input =
-      "{\n\
-    \"type\": \"record\",\n\
-    \"name\": \"testrecord\",\n\
-    \"fields\": [\n\
-        {\n\
-            \"name\": \"testbytes\",\n\
-            \"type\": \"bytes\",\n\
-            \"default\": \"\"\n\
-        }\n\
-    ]\n\
-}\n\
-";
+namespace iceberg {
 
-  ::avro::ValidSchema schema = ::avro::compileJsonSchemaFromString(input);
-  std::ostringstream actual;
-  schema.toJson(actual);
+std::string Demo::print() const { return "Demo"; }
 
-  return actual.str();
-}
-
-}  // namespace iceberg::avro
+}  // namespace iceberg

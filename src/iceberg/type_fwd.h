@@ -81,4 +81,29 @@ class TimestampTzType;
 class Type;
 class UuidType;
 
+struct Namespace;
+struct TableIdentifier;
+
+class Catalog;
+class LocationProvider;
+class Table;
+class Transaction;
+
+/// ----------------------------------------------------------------------------
+/// TODO: Forward declarations below are not added yet.
+/// ----------------------------------------------------------------------------
+
+class HistoryEntry;
+class PartitionSpec;
+class Snapshot;
+class SortOrder;
+class StructLike;
+class TableMetadata;
+
+class MetadataUpdate;
+class UpdateRequirement;
+
+class AppendFiles;
+class TableScan;
+
 }  // namespace iceberg
