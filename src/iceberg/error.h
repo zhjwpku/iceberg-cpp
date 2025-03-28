@@ -35,6 +35,7 @@ enum class ErrorKind {
   kCommitStateUnknown,
   kInvalidArgument,
   kIOError,
+  kNotImplemented,
   kUnknownError,
 };
 
@@ -42,9 +43,6 @@ enum class ErrorKind {
 struct ICEBERG_EXPORT [[nodiscard]] Error {
   ErrorKind kind;
   std::string message;
-
-  explicit Error(ErrorKind kind, std::string message)
-      : kind(kind), message(std::move(message)) {};
 };
 
 }  // namespace iceberg
