@@ -29,10 +29,15 @@
 
 #include <cstdint>
 
+extern "C" {
+
 #ifndef ARROW_C_DATA_INTERFACE
 #  define ARROW_C_DATA_INTERFACE
 
-extern "C" {
+#  define ARROW_FLAG_DICTIONARY_ORDERED 1
+#  define ARROW_FLAG_NULLABLE 2
+#  define ARROW_FLAG_MAP_KEYS_SORTED 4
+
 struct ArrowSchema {
   // Array type description
   const char* format;
@@ -66,6 +71,6 @@ struct ArrowArray {
   void* private_data;
 };
 
-}  // extern "C"
-
 #endif  // ARROW_C_DATA_INTERFACE
+
+}  // extern "C"

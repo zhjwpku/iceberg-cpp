@@ -32,6 +32,8 @@ enum class ErrorKind {
   kAlreadyExists,
   kNoSuchTable,
   kCommitStateUnknown,
+  kInvalidSchema,
+  kInvalidArgument,
 };
 
 /// \brief Error with a kind and a message.
