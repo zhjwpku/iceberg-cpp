@@ -34,6 +34,9 @@ enum class ErrorKind {
   kCommitStateUnknown,
   kInvalidSchema,
   kInvalidArgument,
+  kIOError,
+  kNotImplemented,
+  kUnknownError,
   kNotSupported,
 };
 
