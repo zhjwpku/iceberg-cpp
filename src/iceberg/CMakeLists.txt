@@ -27,6 +27,8 @@ set(ICEBERG_SOURCES
     partition_spec.cc
     sort_field.cc
     sort_order.cc
+    statistics_file.cc
+    table_metadata.cc
     transform.cc
     type.cc)
 
