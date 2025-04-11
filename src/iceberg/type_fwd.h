@@ -95,11 +95,13 @@ class Transaction;
 
 class HistoryEntry;
 class PartitionSpec;
-class Snapshot;
+struct Snapshot;
+struct SnapshotRef;
+enum class SnapshotRefType;
 class SortField;
 class SortOrder;
 class StructLike;
-class TableMetadata;
+struct TableMetadata;
 enum class TransformType;
 class TransformFunction;
 
