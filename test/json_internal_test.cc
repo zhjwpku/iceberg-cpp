@@ -70,7 +70,7 @@ void TestJsonConversion(const T& obj, const nlohmann::json& expected_json) {
 }  // namespace
 
 TEST(JsonInternalTest, SortField) {
-  auto identity_transform = std::make_shared<IdentityTransformFunction>();
+  auto identity_transform = Transform::Identity();
 
   // Test for SortField with ascending order
   SortField sort_field_asc(5, identity_transform, SortDirection::kAscending,
@@ -88,7 +88,7 @@ TEST(JsonInternalTest, SortField) {
 }
 
 TEST(JsonInternalTest, SortOrder) {
-  auto identity_transform = std::make_shared<IdentityTransformFunction>();
+  auto identity_transform = Transform::Identity();
   SortField st_ts(5, identity_transform, SortDirection::kAscending, NullOrder::kFirst);
   SortField st_bar(7, identity_transform, SortDirection::kDescending, NullOrder::kLast);
   SortOrder sort_order(100, {st_ts, st_bar});
@@ -102,7 +102,7 @@ TEST(JsonInternalTest, SortOrder) {
 }
 
 TEST(JsonInternalTest, PartitionField) {
-  auto identity_transform = std::make_shared<IdentityTransformFunction>();
+  auto identity_transform = Transform::Identity();
   PartitionField field(3, 101, "region", identity_transform);
   nlohmann::json expected_json =
       R"({"source-id":3,"field-id":101,"transform":"identity","name":"region"})"_json;
@@ -125,7 +125,7 @@ TEST(JsonPartitionTest, PartitionSpec) {
                SchemaField(3, "region", std::make_shared<StringType>(), false),
                SchemaField(5, "ts", std::make_shared<LongType>(), false)});
 
-  auto identity_transform = std::make_shared<IdentityTransformFunction>();
+  auto identity_transform = Transform::Identity();
   PartitionSpec spec(schema, 1,
                      {PartitionField(3, 101, "region", identity_transform),
                       PartitionField(5, 102, "ts", identity_transform)});
