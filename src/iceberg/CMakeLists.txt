@@ -34,6 +34,8 @@ set(ICEBERG_SOURCES
     transform.cc
     transform_function.cc
     type.cc
+    snapshot.cc
+    expression.cc
     util/murmurhash3_internal.cc)
 
 set(ICEBERG_STATIC_BUILD_INTERFACE_LIBS)

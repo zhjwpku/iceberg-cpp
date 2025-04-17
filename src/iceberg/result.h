@@ -39,6 +39,7 @@ enum class ErrorKind {
   kNotImplemented,
   kUnknownError,
   kNotSupported,
+  kInvalidExpression,
   kJsonParseError,
 };
 
