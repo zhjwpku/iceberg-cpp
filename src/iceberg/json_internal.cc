@@ -1059,7 +1059,7 @@ Status ParseSortOrders(const nlohmann::json& json, int8_t format_version,
     if (format_version > 1) {
       return JsonParseError("{} must exist in format v{}", kSortOrders, format_version);
     }
-    return NotImplementedError("Assign a default sort order");
+    return NotImplemented("Assign a default sort order");
   }
   return {};
 }
@@ -1115,7 +1115,7 @@ Result<std::unique_ptr<TableMetadata>> TableMetadataFromJson(const nlohmann::jso
     // TODO(gangwu): iterate all partition specs to find the largest partition
     // field id or assign a default value for unpartitioned tables. However,
     // PartitionSpec::lastAssignedFieldId() is not implemented yet.
-    return NotImplementedError("Find the largest partition field id");
+    return NotImplemented("Find the largest partition field id");
   }
 
   ICEBERG_RETURN_UNEXPECTED(ParseSortOrders(json, table_metadata->format_version,
