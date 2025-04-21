@@ -20,8 +20,13 @@
 #include "iceberg/table_metadata.h"
 
 #include <format>
+#include <ranges>
 #include <string>
 
+#include "iceberg/expected.h"
+#include "iceberg/partition_spec.h"
+#include "iceberg/schema.h"
+#include "iceberg/sort_order.h"
 namespace iceberg {
 
 std::string ToString(const SnapshotLogEntry& entry) {
@@ -32,6 +37,45 @@ std::string ToString(const SnapshotLogEntry& entry) {
 std::string ToString(const MetadataLogEntry& entry) {
   return std::format("MetadataLogEntry[timestampMillis={},file={}]", entry.timestamp_ms,
                      entry.metadata_file);
+}
+
+Result<std::shared_ptr<Schema>> TableMetadata::Schema() const {
+  auto iter = std::ranges::find_if(schemas, [this](const auto& schema) {
+    return schema->schema_id() == current_schema_id;
+  });
+  if (iter == schemas.end()) {
+    return unexpected<Error>({
+        .kind = ErrorKind::kNotFound,
+        .message = std::format("Current schema is not found"),
+    });
+  }
+  return *iter;
+}
+
+Result<std::shared_ptr<PartitionSpec>> TableMetadata::PartitionSpec() const {
+  auto iter = std::ranges::find_if(partition_specs, [this](const auto& spec) {
+    return spec->spec_id() == default_spec_id;
+  });
+  if (iter == partition_specs.end()) {
+    return unexpected<Error>({
+        .kind = ErrorKind::kNotFound,
+        .message = std::format("Default partition spec is not found"),
+    });
+  }
+  return *iter;
+}
+
+Result<std::shared_ptr<SortOrder>> TableMetadata::SortOrder() const {
+  auto iter = std::ranges::find_if(sort_orders, [this](const auto& order) {
+    return order->order_id() == default_sort_order_id;
+  });
+  if (iter == sort_orders.end()) {
+    return unexpected<Error>({
+        .kind = ErrorKind::kNotFound,
+        .message = std::format("Default sort order is not found"),
+    });
+  }
+  return *iter;
 }
 
 Result<TimePointMs> TimePointMsFromUnixMs(int64_t unix_ms) {

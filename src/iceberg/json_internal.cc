@@ -22,12 +22,15 @@
 #include <algorithm>
 #include <cstdint>
 #include <format>
+#include <ranges>
 #include <regex>
 #include <type_traits>
 #include <unordered_set>
 
+#include <iceberg/table.h>
 #include <nlohmann/json.hpp>
 
+#include "iceberg/partition_field.h"
 #include "iceberg/partition_spec.h"
 #include "iceberg/result.h"
 #include "iceberg/schema.h"
@@ -248,7 +251,7 @@ Result<std::vector<T>> FromJsonList(
       list.emplace_back(std::move(entry));
     }
   }
-  return {};
+  return list;
 }
 
 /// \brief Parse a list of items from a JSON object.
@@ -471,7 +474,7 @@ nlohmann::json ToJson(const Type& type) {
 
 nlohmann::json ToJson(const Schema& schema) {
   nlohmann::json json = ToJson(static_cast<const Type&>(schema));
-  json[kSchemaId] = schema.schema_id();
+  SetOptionalField(json, kSchemaId, schema.schema_id());
   // TODO(gangwu): add identifier-field-ids.
   return json;
 }
@@ -625,7 +628,7 @@ Result<std::unique_ptr<SchemaField>> FieldFromJson(const nlohmann::json& json) {
 }
 
 Result<std::unique_ptr<Schema>> SchemaFromJson(const nlohmann::json& json) {
-  ICEBERG_ASSIGN_OR_RAISE(auto schema_id, GetJsonValue<int32_t>(json, kSchemaId));
+  ICEBERG_ASSIGN_OR_RAISE(auto schema_id, GetJsonValueOptional<int32_t>(json, kSchemaId));
   ICEBERG_ASSIGN_OR_RAISE(auto type, TypeFromJson(json));
 
   if (type->type_id() != TypeId::kStruct) [[unlikely]] {
@@ -658,9 +661,16 @@ nlohmann::json ToJson(const PartitionSpec& partition_spec) {
 }
 
 Result<std::unique_ptr<PartitionField>> PartitionFieldFromJson(
-    const nlohmann::json& json) {
+    const nlohmann::json& json, bool allow_field_id_missing) {
   ICEBERG_ASSIGN_OR_RAISE(auto source_id, GetJsonValue<int32_t>(json, kSourceId));
-  ICEBERG_ASSIGN_OR_RAISE(auto field_id, GetJsonValue<int32_t>(json, kFieldId));
+  int32_t field_id;
+  if (allow_field_id_missing) {
+    // Partition field id in v1 is not tracked, so we use -1 to indicate that.
+    ICEBERG_ASSIGN_OR_RAISE(field_id, GetJsonValueOrDefault<int32_t>(
+                                          json, kFieldId, SchemaField::kInvalidFieldId));
+  } else {
+    ICEBERG_ASSIGN_OR_RAISE(field_id, GetJsonValue<int32_t>(json, kFieldId));
+  }
   ICEBERG_ASSIGN_OR_RAISE(
       auto transform,
       GetJsonValue<std::string>(json, kTransform).and_then(TransformFromString));
@@ -905,7 +915,7 @@ nlohmann::json ToJson(const TableMetadata& table_metadata) {
   }
 
   // write the current schema ID and schema list
-  json[kCurrentSchemaId] = table_metadata.current_schema_id;
+  SetOptionalField(json, kCurrentSchemaId, table_metadata.current_schema_id);
   json[kSchemas] = ToJsonList(table_metadata.schemas);
 
   // for older readers, continue writing the default spec as "partition-spec"
@@ -963,7 +973,8 @@ namespace {
 ///
 /// \return The current schema or parse error.
 Result<std::shared_ptr<Schema>> ParseSchemas(
-    const nlohmann::json& json, int8_t format_version, int32_t& current_schema_id,
+    const nlohmann::json& json, int8_t format_version,
+    std::optional<int32_t>& current_schema_id,
     std::vector<std::shared_ptr<Schema>>& schemas) {
   std::shared_ptr<Schema> current_schema;
   if (json.contains(kSchemas)) {
@@ -986,7 +997,7 @@ Result<std::shared_ptr<Schema>> ParseSchemas(
     }
     if (!current_schema) {
       return JsonParseError("Cannot find schema with {}={} from {}", kCurrentSchemaId,
-                            current_schema_id, schema_array.dump());
+                            current_schema_id.value(), schema_array.dump());
     }
   } else {
     if (format_version != 1) {
@@ -1031,13 +1042,30 @@ Status ParsePartitionSpecs(const nlohmann::json& json, int8_t format_version,
       return JsonParseError("{} must exist in format v{}", kPartitionSpecs,
                             format_version);
     }
-    default_spec_id = TableMetadata::kInitialSpecId;
 
-    ICEBERG_ASSIGN_OR_RAISE(auto spec, GetJsonValue<nlohmann::json>(json, kPartitionSpec)
-                                           .and_then([current_schema](const auto& json) {
-                                             return PartitionSpecFromJson(current_schema,
-                                                                          json);
-                                           }));
+    ICEBERG_ASSIGN_OR_RAISE(auto partition_spec_json,
+                            GetJsonValue<nlohmann::json>(json, kPartitionSpec));
+    if (!partition_spec_json.is_array()) {
+      return JsonParseError("Cannot parse v1 partition spec from non-array: {}",
+                            partition_spec_json.dump());
+    }
+
+    int32_t next_partition_field_id = PartitionSpec::kLegacyPartitionDataIdStart;
+    std::vector<PartitionField> fields;
+    for (const auto& entry_json : partition_spec_json) {
+      ICEBERG_ASSIGN_OR_RAISE(auto field, PartitionFieldFromJson(entry_json));
+      int32_t field_id = field->field_id();
+      if (field_id == SchemaField::kInvalidFieldId) {
+        // If the field ID is not set, we need to assign a new one
+        field_id = next_partition_field_id++;
+      }
+      fields.emplace_back(field->source_id(), field_id, std::string(field->name()),
+                          std::move(field->transform()));
+    }
+
+    auto spec = std::make_unique<PartitionSpec>(
+        current_schema, PartitionSpec::kInitialSpecId, std::move(fields));
+    default_spec_id = spec->spec_id();
     partition_specs.push_back(std::move(spec));
   }
 
@@ -1066,7 +1094,9 @@ Status ParseSortOrders(const nlohmann::json& json, int8_t format_version,
     if (format_version > 1) {
       return JsonParseError("{} must exist in format v{}", kSortOrders, format_version);
     }
-    return NotImplementedError("Assign a default sort order");
+    auto sort_order = SortOrder::Unsorted();
+    default_sort_order_id = sort_order->order_id();
+    sort_orders.push_back(std::move(sort_order));
   }
   return {};
 }
@@ -1119,10 +1149,16 @@ Result<std::unique_ptr<TableMetadata>> TableMetadataFromJson(const nlohmann::jso
       return JsonParseError("{} must exist in format v{}", kLastPartitionId,
                             table_metadata->format_version);
     }
-    // TODO(gangwu): iterate all partition specs to find the largest partition
-    // field id or assign a default value for unpartitioned tables. However,
-    // PartitionSpec::lastAssignedFieldId() is not implemented yet.
-    return NotImplementedError("Find the largest partition field id");
+
+    if (table_metadata->partition_specs.empty()) {
+      table_metadata->last_partition_id =
+          PartitionSpec::Unpartitioned()->last_assigned_field_id();
+    } else {
+      table_metadata->last_partition_id =
+          std::ranges::max(table_metadata->partition_specs, {}, [](const auto& spec) {
+            return spec->last_assigned_field_id();
+          })->last_assigned_field_id();
+    }
   }
 
   ICEBERG_RETURN_UNEXPECTED(ParseSortOrders(json, table_metadata->format_version,
@@ -1134,10 +1170,9 @@ Result<std::unique_ptr<TableMetadata>> TableMetadataFromJson(const nlohmann::jso
   }
 
   // This field is optional, but internally we set this to -1 when not set
-  ICEBERG_ASSIGN_OR_RAISE(
-      table_metadata->current_snapshot_id,
-      GetJsonValueOrDefault<int64_t>(json, kCurrentSnapshotId,
-                                     TableMetadata::kInvalidSnapshotId));
+  ICEBERG_ASSIGN_OR_RAISE(table_metadata->current_snapshot_id,
+                          GetJsonValueOrDefault<int64_t>(json, kCurrentSnapshotId,
+                                                         Snapshot::kInvalidSnapshotId));
 
   if (table_metadata->format_version >= 3) {
     ICEBERG_ASSIGN_OR_RAISE(table_metadata->next_row_id,
@@ -1155,7 +1190,7 @@ Result<std::unique_ptr<TableMetadata>> TableMetadataFromJson(const nlohmann::jso
     ICEBERG_ASSIGN_OR_RAISE(
         table_metadata->refs,
         FromJsonMap<std::shared_ptr<SnapshotRef>>(json, kRefs, SnapshotRefFromJson));
-  } else if (table_metadata->current_snapshot_id != TableMetadata::kInvalidSnapshotId) {
+  } else if (table_metadata->current_snapshot_id != Snapshot::kInvalidSnapshotId) {
     table_metadata->refs["main"] = std::make_unique<SnapshotRef>(SnapshotRef{
         .snapshot_id = table_metadata->current_snapshot_id,
         .retention = SnapshotRef::Branch{},
