@@ -40,3 +40,15 @@ struct std::formatter<Derived> : std::formatter<std::string_view> {
     return std::formatter<string_view>::format(obj.ToString(), ctx);
   }
 };
+
+/// \brief std::formatter specialization for any type that has a ToString function
+template <typename T>
+  requires requires(const T& t) {
+    { ToString(t) } -> std::convertible_to<std::string>;
+  }
+struct std::formatter<T> : std::formatter<std::string_view> {
+  template <class FormatContext>
+  auto format(const T& value, FormatContext& ctx) const {
+    return std::formatter<std::string_view>::format(ToString(value), ctx);
+  }
+};
