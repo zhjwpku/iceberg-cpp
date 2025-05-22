@@ -32,6 +32,7 @@ set(ICEBERG_SOURCES
     schema.cc
     schema_field.cc
     schema_internal.cc
+    schema_util.cc
     snapshot.cc
     sort_field.cc
     sort_order.cc
