@@ -23,7 +23,7 @@
 /// Data reader interface for manifest files.
 
 #include <memory>
-#include <span>
+#include <vector>
 
 #include "iceberg/file_reader.h"
 #include "iceberg/iceberg_export.h"
@@ -35,35 +35,29 @@ namespace iceberg {
 class ICEBERG_EXPORT ManifestReader {
  public:
   virtual ~ManifestReader() = default;
-  virtual Result<std::span<std::unique_ptr<ManifestEntry>>> Entries() const = 0;
+  virtual Result<std::vector<ManifestEntry>> Entries() const = 0;
 
- private:
-  std::unique_ptr<Reader> reader_;
+  /// \brief Creates a reader for a manifest file.
+  /// \param manifest_location Path to the manifest file.
+  /// \param file_io File IO implementation to use.
+  /// \return A Result containing the reader or an error.
+  static Result<std::unique_ptr<ManifestReader>> MakeReader(
+      std::string_view manifest_location, std::shared_ptr<FileIO> file_io,
+      std::shared_ptr<Schema> partition_schema);
 };
 
 /// \brief Read manifest files from a manifest list file.
 class ICEBERG_EXPORT ManifestListReader {
  public:
   virtual ~ManifestListReader() = default;
-  virtual Result<std::span<std::unique_ptr<ManifestFile>>> Files() const = 0;
+  virtual Result<std::vector<ManifestFile>> Files() const = 0;
 
- private:
-  std::unique_ptr<Reader> reader_;
+  /// \brief Creates a reader for the manifest list.
+  /// \param manifest_list_location Path to the manifest list file.
+  /// \param file_io File IO implementation to use.
+  /// \return A Result containing the reader or an error.
+  static Result<std::unique_ptr<ManifestListReader>> MakeReader(
+      std::string_view manifest_list_location, std::shared_ptr<FileIO> file_io);
 };
-
-/// \brief Creates a reader for the manifest list.
-/// \param file_path Path to the manifest list file.
-/// \return A Result containing the reader or an error.
-Result<std::unique_ptr<ManifestListReader>> CreateManifestListReader(
-    std::string_view file_path) {
-  return NotImplemented("CreateManifestListReader is not implemented yet.");
-}
-
-/// \brief Creates a reader for a manifest file.
-/// \param file_path Path to the manifest file.
-/// \return A Result containing the reader or an error.
-Result<std::unique_ptr<ManifestReader>> CreateManifestReader(std::string_view file_path) {
-  return NotImplemented("CreateManifestReader is not implemented yet.");
-}
 
 }  // namespace iceberg
