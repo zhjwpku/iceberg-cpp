@@ -176,7 +176,7 @@ struct ICEBERG_EXPORT DataFile {
   /// present
   std::optional<int64_t> content_size_in_bytes;
 
-  inline static const SchemaField kContent = SchemaField::MakeRequired(
+  inline static const SchemaField kContent = SchemaField::MakeOptional(
       134, "content", iceberg::int32(),
       "Contents of the file: 0=data, 1=position deletes, 2=equality deletes");
   inline static const SchemaField kFilePath = SchemaField::MakeRequired(
