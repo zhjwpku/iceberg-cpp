@@ -22,6 +22,7 @@
 #include <memory>
 #include <vector>
 
+#include "iceberg/schema.h"
 #include "iceberg/schema_field.h"
 #include "iceberg/type.h"
 
@@ -29,13 +30,16 @@ namespace iceberg {
 
 bool ManifestEntry::operator==(const ManifestEntry& other) const {
   return status == other.status && snapshot_id == other.snapshot_id &&
-             sequence_number == other.sequence_number &&
-             file_sequence_number == other.file_sequence_number &&
-             (data_file && other.data_file && *data_file == *other.data_file) ||
-         (!data_file && !other.data_file);
+         sequence_number == other.sequence_number &&
+         file_sequence_number == other.file_sequence_number &&
+         ((data_file && other.data_file && *data_file == *other.data_file) ||
+          (!data_file && !other.data_file));
 }
 
 std::shared_ptr<StructType> DataFile::Type(std::shared_ptr<StructType> partition_type) {
+  if (!partition_type) {
+    partition_type = PartitionSpec::Unpartitioned()->schema();
+  }
   return std::make_shared<StructType>(std::vector<SchemaField>{
       kContent,
       kFilePath,
