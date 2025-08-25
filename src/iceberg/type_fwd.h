@@ -115,8 +115,11 @@ enum class SnapshotRefType;
 enum class TransformType;
 
 class Expression;
+class Literal;
 
+class DataTableScan;
 class FileScanTask;
+class ScanTask;
 class TableScan;
 class TableScanBuilder;
 
@@ -125,18 +128,17 @@ struct ManifestEntry;
 struct ManifestFile;
 struct ManifestList;
 
-class ManifestReader;
 class ManifestListReader;
+class ManifestListWriter;
+class ManifestReader;
+class ManifestWriter;
 
-/// ----------------------------------------------------------------------------
-/// TODO: Forward declarations below are not added yet.
-/// ----------------------------------------------------------------------------
+class Reader;
+class Writer;
 
 class StructLike;
-
 class MetadataUpdate;
 class UpdateRequirement;
-
 class AppendFiles;
 
 }  // namespace iceberg
