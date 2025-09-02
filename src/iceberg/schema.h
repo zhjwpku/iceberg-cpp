@@ -29,8 +29,10 @@
 #include <vector>
 
 #include "iceberg/iceberg_export.h"
+#include "iceberg/result.h"
 #include "iceberg/schema_field.h"
 #include "iceberg/type.h"
+#include "iceberg/util/string_util.h"
 
 namespace iceberg {
 
@@ -54,13 +56,44 @@ class ICEBERG_EXPORT Schema : public StructType {
 
   [[nodiscard]] std::string ToString() const override;
 
+  /// \brief Find the SchemaField by field name.
+  ///
+  /// Short names for maps and lists are included for any name that does not conflict with
+  /// a canonical name. For example, a list, 'l', of structs with field 'x' will produce
+  /// short name 'l.x' in addition to canonical name 'l.element.x'. a map 'm', if its
+  /// value include a structs with field 'x' wil produce short name 'm.x' in addition to
+  /// canonical name 'm.value.x'
+  /// FIXME: Currently only handles ASCII lowercase conversion; extend to support
+  /// non-ASCII characters (e.g., using std::towlower or ICU)
+  [[nodiscard]] Result<std::optional<std::reference_wrapper<const SchemaField>>>
+  FindFieldByName(std::string_view name, bool case_sensitive = true) const;
+
+  /// \brief Find the SchemaField by field id.
+  [[nodiscard]] Result<std::optional<std::reference_wrapper<const SchemaField>>>
+  FindFieldById(int32_t field_id) const;
+
   friend bool operator==(const Schema& lhs, const Schema& rhs) { return lhs.Equals(rhs); }
 
  private:
   /// \brief Compare two schemas for equality.
   [[nodiscard]] bool Equals(const Schema& other) const;
 
+  // TODO(nullccxsy): Address potential concurrency issues in lazy initialization (e.g.,
+  // use std::call_once)
+  Status InitIdToFieldMap() const;
+  Status InitNameToIdMap() const;
+  Status InitLowerCaseNameToIdMap() const;
+
   const std::optional<int32_t> schema_id_;
+  /// Mapping from field id to field.
+  mutable std::unordered_map<int32_t, std::reference_wrapper<const SchemaField>>
+      id_to_field_;
+  /// Mapping from field name to field id.
+  mutable std::unordered_map<std::string, int32_t, StringHash, std::equal_to<>>
+      name_to_id_;
+  /// Mapping from lowercased field name to field id
+  mutable std::unordered_map<std::string, int32_t, StringHash, std::equal_to<>>
+      lowercase_name_to_id_;
 };
 
 }  // namespace iceberg
