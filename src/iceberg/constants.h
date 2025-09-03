@@ -17,13 +17,12 @@
  * under the License.
  */
 
-#include "iceberg/parquet/parquet_register.h"
+#pragma once
 
-namespace iceberg::parquet {
+#include <string_view>
 
-void RegisterAll() {
-  RegisterReader();
-  RegisterWriter();
-}
+namespace iceberg {
 
-}  // namespace iceberg::parquet
+constexpr std::string_view kParquetFieldIdKey = "PARQUET:field_id";
+
+}  // namespace iceberg

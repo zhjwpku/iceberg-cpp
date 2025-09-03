@@ -17,13 +17,35 @@
  * under the License.
  */
 
-#include "iceberg/parquet/parquet_register.h"
+#pragma once
+
+#include "iceberg/file_writer.h"
+#include "iceberg/iceberg_bundle_export.h"
 
 namespace iceberg::parquet {
 
-void RegisterAll() {
-  RegisterReader();
-  RegisterWriter();
-}
+/// \brief A writer that writes ArrowArray to Parquet files.
+class ICEBERG_BUNDLE_EXPORT ParquetWriter : public Writer {
+ public:
+  ParquetWriter() = default;
+
+  ~ParquetWriter() override;
+
+  Status Open(const WriterOptions& options) final;
+
+  Status Close() final;
+
+  Status Write(ArrowArray array) final;
+
+  std::optional<Metrics> metrics() final;
+
+  std::optional<int64_t> length() final;
+
+  std::vector<int64_t> split_offsets() final;
+
+ private:
+  class Impl;
+  std::unique_ptr<Impl> impl_;
+};
 
 }  // namespace iceberg::parquet
