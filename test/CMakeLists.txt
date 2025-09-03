@@ -75,11 +75,7 @@ add_iceberg_test(table_test
                  table_test.cc
                  schema_json_test.cc)
 
-add_iceberg_test(expression_test
-                 SOURCES
-                 decimal_test.cc
-                 expression_test.cc
-                 literal_test.cc)
+add_iceberg_test(expression_test SOURCES expression_test.cc literal_test.cc)
 
 add_iceberg_test(json_serde_test
                  SOURCES
@@ -90,10 +86,11 @@ add_iceberg_test(json_serde_test
 
 add_iceberg_test(util_test
                  SOURCES
-                 formatter_test.cc
                  config_test.cc
-                 visit_type_test.cc
-                 string_utils_test.cc)
+                 decimal_test.cc
+                 formatter_test.cc
+                 string_utils_test.cc
+                 visit_type_test.cc)
 
 if(ICEBERG_BUILD_BUNDLE)
   add_iceberg_test(avro_test
