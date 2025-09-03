@@ -27,6 +27,7 @@
 
 #include "iceberg/schema_field.h"
 #include "iceberg/util/formatter.h"  // IWYU pragma: keep
+#include "matchers.h"
 
 TEST(SchemaTest, Basics) {
   {
@@ -47,18 +48,16 @@ TEST(SchemaTest, Basics) {
     ASSERT_THAT(schema.GetFieldByName("bar"), ::testing::Optional(field2));
 
     ASSERT_EQ(std::nullopt, schema.GetFieldById(0));
-    ASSERT_EQ(std::nullopt, schema.GetFieldByIndex(2));
-    ASSERT_EQ(std::nullopt, schema.GetFieldByIndex(-1));
+    auto result = schema.GetFieldByIndex(2);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index 2 to get field from struct"));
+    result = schema.GetFieldByIndex(-1);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index -1 to get field from struct"));
     ASSERT_EQ(std::nullopt, schema.GetFieldByName("element"));
   }
-  ASSERT_THAT(
-      []() {
-        iceberg::SchemaField field1(5, "foo", iceberg::int32(), true);
-        iceberg::SchemaField field2(5, "bar", iceberg::string(), true);
-        iceberg::Schema schema({field1, field2}, 100);
-      },
-      ::testing::ThrowsMessage<std::runtime_error>(
-          ::testing::HasSubstr("duplicate field ID 5")));
 }
 
 TEST(SchemaTest, Equality) {

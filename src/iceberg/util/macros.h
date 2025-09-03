@@ -19,13 +19,10 @@
 
 #pragma once
 
-#define ICEBERG_RETURN_UNEXPECTED(result)                 \
-  do {                                                    \
-    auto&& result_name = (result);                        \
-    if (!result_name) [[unlikely]] {                      \
-      return std::unexpected<Error>(result_name.error()); \
-    }                                                     \
-  } while (false);
+#define ICEBERG_RETURN_UNEXPECTED(result)                       \
+  if (auto&& result_name = result; !result_name) [[unlikely]] { \
+    return std::unexpected<Error>(result_name.error());         \
+  }
 
 #define ICEBERG_ASSIGN_OR_RAISE_IMPL(result_name, lhs, rexpr) \
   auto&& result_name = (rexpr);                               \

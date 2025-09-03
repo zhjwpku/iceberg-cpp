@@ -222,8 +222,8 @@ Result<std::vector<ManifestFile>> ParseManifestList(ArrowSchema* schema,
     if (!field.has_value()) {
       return InvalidSchema("Field index {} is not found in schema", idx);
     }
-    auto field_name = field.value().get().name();
-    bool required = !field.value().get().optional();
+    auto field_name = field.value()->get().name();
+    bool required = !field.value()->get().optional();
     auto view_of_column = array_view.children[idx];
     switch (idx) {
       case 0:
@@ -340,8 +340,8 @@ Status ParseDataFile(const std::shared_ptr<StructType>& data_file_schema,
                            data_file_schema->fields().size(), view_of_column->n_children);
   }
   for (int64_t col_idx = 0; col_idx < view_of_column->n_children; ++col_idx) {
-    auto field_name = data_file_schema->GetFieldByIndex(col_idx).value().get().name();
-    auto required = !data_file_schema->GetFieldByIndex(col_idx).value().get().optional();
+    auto field_name = data_file_schema->GetFieldByIndex(col_idx).value()->get().name();
+    auto required = !data_file_schema->GetFieldByIndex(col_idx).value()->get().optional();
     auto view_of_file_field = view_of_column->children[col_idx];
     auto manifest_entry_count = view_of_file_field->length;
 
@@ -487,8 +487,8 @@ Result<std::vector<ManifestEntry>> ParseManifestEntry(ArrowSchema* schema,
     if (!field.has_value()) {
       return InvalidManifest("Field not found in schema: {}", idx);
     }
-    auto field_name = field.value().get().name();
-    bool required = !field.value().get().optional();
+    auto field_name = field.value()->get().name();
+    bool required = !field.value()->get().optional();
     auto view_of_column = array_view.children[idx];
 
     switch (idx) {
@@ -510,7 +510,7 @@ Result<std::vector<ManifestEntry>> ParseManifestEntry(ArrowSchema* schema,
         break;
       case 4: {
         auto data_file_schema =
-            dynamic_pointer_cast<StructType>(field.value().get().type());
+            dynamic_pointer_cast<StructType>(field.value()->get().type());
         ICEBERG_RETURN_UNEXPECTED(
             ParseDataFile(data_file_schema, view_of_column, manifest_entries));
         break;

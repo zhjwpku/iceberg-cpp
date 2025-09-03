@@ -115,7 +115,7 @@ Result<std::unique_ptr<TableScan>> TableScanBuilder::Build() {
           return InvalidArgument("Column {} not found in schema '{}'", column_name,
                                  *schema_id);
         }
-        projected_fields.emplace_back(field_opt.value().get());
+        projected_fields.emplace_back(field_opt.value()->get());
       }
       context_.projected_schema =
           std::make_shared<Schema>(std::move(projected_fields), schema->schema_id());

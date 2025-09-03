@@ -28,6 +28,7 @@
 
 #include "iceberg/exception.h"
 #include "iceberg/util/formatter.h"  // IWYU pragma: keep
+#include "matchers.h"
 
 struct TypeTestCase {
   /// Test case name, must be safe for Googletest (alphanumeric + underscore)
@@ -315,13 +316,22 @@ TEST(TypeTest, List) {
     std::span<const iceberg::SchemaField> fields = list.fields();
     ASSERT_EQ(1, fields.size());
     ASSERT_EQ(field, fields[0]);
-    ASSERT_THAT(list.GetFieldById(5), ::testing::Optional(field));
+    auto result = list.GetFieldByIndex(5);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index 5 to get field from list"));
     ASSERT_THAT(list.GetFieldByIndex(0), ::testing::Optional(field));
     ASSERT_THAT(list.GetFieldByName("element"), ::testing::Optional(field));
 
     ASSERT_EQ(std::nullopt, list.GetFieldById(0));
-    ASSERT_EQ(std::nullopt, list.GetFieldByIndex(1));
-    ASSERT_EQ(std::nullopt, list.GetFieldByIndex(-1));
+    result = list.GetFieldByIndex(1);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index 1 to get field from list"));
+    result = list.GetFieldByIndex(-1);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index -1 to get field from list"));
     ASSERT_EQ(std::nullopt, list.GetFieldByName("foo"));
   }
   ASSERT_THAT(
@@ -350,8 +360,14 @@ TEST(TypeTest, Map) {
     ASSERT_THAT(map.GetFieldByName("value"), ::testing::Optional(value));
 
     ASSERT_EQ(std::nullopt, map.GetFieldById(0));
-    ASSERT_EQ(std::nullopt, map.GetFieldByIndex(2));
-    ASSERT_EQ(std::nullopt, map.GetFieldByIndex(-1));
+    auto result = map.GetFieldByIndex(2);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index 2 to get field from map"));
+    result = map.GetFieldByIndex(-1);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index -1 to get field from map"));
     ASSERT_EQ(std::nullopt, map.GetFieldByName("element"));
   }
   ASSERT_THAT(
@@ -389,16 +405,109 @@ TEST(TypeTest, Struct) {
     ASSERT_THAT(struct_.GetFieldByName("bar"), ::testing::Optional(field2));
 
     ASSERT_EQ(std::nullopt, struct_.GetFieldById(0));
-    ASSERT_EQ(std::nullopt, struct_.GetFieldByIndex(2));
-    ASSERT_EQ(std::nullopt, struct_.GetFieldByIndex(-1));
+    auto result = struct_.GetFieldByIndex(2);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index 2 to get field from struct"));
+    result = struct_.GetFieldByIndex(-1);
+    ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidArgument));
+    ASSERT_THAT(result,
+                iceberg::HasErrorMessage("Invalid index -1 to get field from struct"));
     ASSERT_EQ(std::nullopt, struct_.GetFieldByName("element"));
   }
-  ASSERT_THAT(
-      []() {
-        iceberg::SchemaField field1(5, "foo", iceberg::int32(), true);
-        iceberg::SchemaField field2(5, "bar", iceberg::string(), true);
-        iceberg::StructType struct_({field1, field2});
-      },
-      ::testing::ThrowsMessage<iceberg::IcebergError>(
-          ::testing::HasSubstr("duplicate field ID 5")));
+}
+
+TEST(TypeTest, StructTypeGetFieldByName) {
+  iceberg::SchemaField field1(1, "Foo", iceberg::int32(), true);
+  iceberg::SchemaField field2(2, "Bar", iceberg::string(), false);
+  iceberg::StructType struct_({field1, field2});
+
+  // Case-sensitive: exact match
+  ASSERT_THAT(struct_.GetFieldByName("Foo"), ::testing::Optional(field1));
+  ASSERT_THAT(struct_.GetFieldByName("foo"), ::testing::Eq(std::nullopt));
+
+  // Case-insensitive
+  ASSERT_THAT(struct_.GetFieldByName("foo", false), ::testing::Optional(field1));
+  ASSERT_THAT(struct_.GetFieldByName("fOO", false), ::testing::Optional(field1));
+  ASSERT_THAT(struct_.GetFieldByName("FOO", false), ::testing::Optional(field1));
+  ASSERT_THAT(struct_.GetFieldByName("bar", false), ::testing::Optional(field2));
+  ASSERT_THAT(struct_.GetFieldByName("BaR", false), ::testing::Optional(field2));
+  ASSERT_THAT(struct_.GetFieldByName("BAR", false), ::testing::Optional(field2));
+  ASSERT_THAT(struct_.GetFieldByName("baz", false), ::testing::Eq(std::nullopt));
+}
+
+TEST(TypeTest, ListTypeGetFieldByName) {
+  iceberg::SchemaField element(1, "element", iceberg::int32(), true);
+  iceberg::ListType list(element);
+
+  // Case-sensitive: exact match
+  ASSERT_THAT(list.GetFieldByName("element"), ::testing::Optional(element));
+  ASSERT_THAT(list.GetFieldByName("Element"), ::testing::Eq(std::nullopt));
+
+  // Case-insensitive
+  ASSERT_THAT(list.GetFieldByName("element", false), ::testing::Optional(element));
+  ASSERT_THAT(list.GetFieldByName("Element", false), ::testing::Optional(element));
+  ASSERT_THAT(list.GetFieldByName("ELEMENT", false), ::testing::Optional(element));
+  ASSERT_THAT(list.GetFieldByName("eLeMeNt", false), ::testing::Optional(element));
+  ASSERT_THAT(list.GetFieldByName("foo", false), ::testing::Eq(std::nullopt));
+}
+
+TEST(TypeTest, MapTypeGetFieldByName) {
+  iceberg::SchemaField key(1, "key", iceberg::int32(), true);
+  iceberg::SchemaField value(2, "value", iceberg::string(), false);
+  iceberg::MapType map(key, value);
+
+  // Case-sensitive: exact match
+  ASSERT_THAT(map.GetFieldByName("key"), ::testing::Optional(key));
+  ASSERT_THAT(map.GetFieldByName("Key"), ::testing::Eq(std::nullopt));
+  ASSERT_THAT(map.GetFieldByName("value"), ::testing::Optional(value));
+  ASSERT_THAT(map.GetFieldByName("Value"), ::testing::Eq(std::nullopt));
+
+  // Case-insensitive
+  ASSERT_THAT(map.GetFieldByName("Key", false), ::testing::Optional(key));
+  ASSERT_THAT(map.GetFieldByName("KEY", false), ::testing::Optional(key));
+  ASSERT_THAT(map.GetFieldByName("kEy", false), ::testing::Optional(key));
+  ASSERT_THAT(map.GetFieldByName("value", false), ::testing::Optional(value));
+  ASSERT_THAT(map.GetFieldByName("Value", false), ::testing::Optional(value));
+  ASSERT_THAT(map.GetFieldByName("VALUE", false), ::testing::Optional(value));
+  ASSERT_THAT(map.GetFieldByName("vAlUe", false), ::testing::Optional(value));
+  ASSERT_THAT(map.GetFieldByName("foo", false), ::testing::Eq(std::nullopt));
+}
+
+TEST(TypeTest, StructDuplicateId) {
+  iceberg::SchemaField field1(5, "foo", iceberg::int32(), true);
+  iceberg::SchemaField field2(5, "bar", iceberg::string(), true);
+  iceberg::StructType struct_({field1, field2});
+
+  auto result = struct_.GetFieldById(5);
+  ASSERT_FALSE(result.has_value());
+  ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidSchema));
+  ASSERT_THAT(result,
+              iceberg::HasErrorMessage(
+                  "Duplicate field id found: 5 (prev name: foo, curr name: bar)"));
+}
+
+TEST(TypeTest, StructDuplicateName) {
+  iceberg::SchemaField field1(1, "foo", iceberg::int32(), true);
+  iceberg::SchemaField field2(2, "foo", iceberg::string(), true);
+  iceberg::StructType struct_({field1, field2});
+
+  auto result = struct_.GetFieldByName("foo", true);
+  ASSERT_FALSE(result.has_value());
+  ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidSchema));
+  ASSERT_THAT(result, iceberg::HasErrorMessage(
+                          "Duplicate field name found: foo (prev id: 1, curr id: 2)"));
+}
+
+TEST(TypeTest, StructDuplicateLowerCaseName) {
+  iceberg::SchemaField field1(1, "Foo", iceberg::int32(), true);
+  iceberg::SchemaField field2(2, "foo", iceberg::string(), true);
+  iceberg::StructType struct_({field1, field2});
+
+  auto result = struct_.GetFieldByName("foo", false);
+  ASSERT_FALSE(result.has_value());
+  ASSERT_THAT(result, IsError(iceberg::ErrorKind::kInvalidSchema));
+  ASSERT_THAT(result,
+              iceberg::HasErrorMessage(
+                  "Duplicate lowercase field name found: foo (prev id: 1, curr id: 2)"));
 }

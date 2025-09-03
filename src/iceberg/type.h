@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "iceberg/iceberg_export.h"
+#include "iceberg/result.h"
 #include "iceberg/schema_field.h"
 #include "iceberg/util/formattable.h"
 
@@ -75,23 +76,27 @@ class ICEBERG_EXPORT NestedType : public Type {
 
   /// \brief Get a view of the child fields.
   [[nodiscard]] virtual std::span<const SchemaField> fields() const = 0;
+  using SchemaFieldConstRef = std::reference_wrapper<const SchemaField>;
   /// \brief Get a field by field ID.
   ///
   /// \note This is O(1) complexity.
-  [[nodiscard]] virtual std::optional<std::reference_wrapper<const SchemaField>>
-  GetFieldById(int32_t field_id) const = 0;
+  [[nodiscard]] virtual Result<std::optional<SchemaFieldConstRef>> GetFieldById(
+      int32_t field_id) const = 0;
   /// \brief Get a field by index.
   ///
   /// \note This is O(1) complexity.
-  [[nodiscard]] virtual std::optional<std::reference_wrapper<const SchemaField>>
-  GetFieldByIndex(int32_t index) const = 0;
-  /// \brief Get a field by name (case-sensitive).  Behavior is undefined if
+  [[nodiscard]] virtual Result<std::optional<SchemaFieldConstRef>> GetFieldByIndex(
+      int32_t index) const = 0;
+  /// \brief Get a field by name.  Return an error Status if
   ///   the field name is not unique; prefer GetFieldById or GetFieldByIndex
   ///   when possible.
   ///
-  /// \note This is currently O(n) complexity.
-  [[nodiscard]] virtual std::optional<std::reference_wrapper<const SchemaField>>
-  GetFieldByName(std::string_view name) const = 0;
+  /// \note This is O(1) complexity.
+  [[nodiscard]] virtual Result<std::optional<SchemaFieldConstRef>> GetFieldByName(
+      std::string_view name, bool case_sensitive) const = 0;
+  /// \brief Get a field by name (case-sensitive).
+  [[nodiscard]] Result<std::optional<SchemaFieldConstRef>> GetFieldByName(
+      std::string_view name) const;
 };
 
 /// \defgroup type-nested Nested Types
@@ -109,18 +114,26 @@ class ICEBERG_EXPORT StructType : public NestedType {
   std::string ToString() const override;
 
   std::span<const SchemaField> fields() const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldById(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldById(
       int32_t field_id) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByIndex(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByIndex(
       int32_t index) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByName(
-      std::string_view name) const override;
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByName(
+      std::string_view name, bool case_sensitive) const override;
+  using NestedType::GetFieldByName;
 
  protected:
   bool Equals(const Type& other) const override;
+  // TODO(nullccxsy): Lazy initialization has concurrency issues, need to add proper
+  // synchronization mechanism
+  Status InitFieldById() const;
+  Status InitFieldByName() const;
+  Status InitFieldByLowerCaseName() const;
 
   std::vector<SchemaField> fields_;
-  std::unordered_map<int32_t, size_t> field_id_to_index_;
+  mutable std::unordered_map<int32_t, SchemaFieldConstRef> field_by_id_;
+  mutable std::unordered_map<std::string_view, SchemaFieldConstRef> field_by_name_;
+  mutable std::unordered_map<std::string, SchemaFieldConstRef> field_by_lowercase_name_;
 };
 
 /// \brief A data type representing a list of values.
@@ -140,12 +153,13 @@ class ICEBERG_EXPORT ListType : public NestedType {
   std::string ToString() const override;
 
   std::span<const SchemaField> fields() const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldById(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldById(
       int32_t field_id) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByIndex(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByIndex(
       int32_t index) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByName(
-      std::string_view name) const override;
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByName(
+      std::string_view name, bool case_sensitive) const override;
+  using NestedType::GetFieldByName;
 
  protected:
   bool Equals(const Type& other) const override;
@@ -172,12 +186,13 @@ class ICEBERG_EXPORT MapType : public NestedType {
   std::string ToString() const override;
 
   std::span<const SchemaField> fields() const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldById(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldById(
       int32_t field_id) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByIndex(
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByIndex(
       int32_t index) const override;
-  std::optional<std::reference_wrapper<const SchemaField>> GetFieldByName(
-      std::string_view name) const override;
+  Result<std::optional<SchemaFieldConstRef>> GetFieldByName(
+      std::string_view name, bool case_sensitive) const override;
+  using NestedType::GetFieldByName;
 
  protected:
   bool Equals(const Type& other) const override;
