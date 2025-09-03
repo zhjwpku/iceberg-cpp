@@ -19,7 +19,6 @@
 
 #include <arrow/array/array_base.h>
 #include <arrow/c/bridge.h>
-#include <arrow/c/helpers.h>
 #include <arrow/filesystem/localfs.h>
 #include <arrow/io/file.h>
 #include <arrow/json/from_string.h>
@@ -31,8 +30,10 @@
 
 #include "iceberg/arrow/arrow_fs_file_io_internal.h"
 #include "iceberg/avro/avro_register.h"
+#include "iceberg/avro/avro_writer.h"
 #include "iceberg/file_reader.h"
 #include "iceberg/schema.h"
+#include "iceberg/schema_internal.h"
 #include "iceberg/type.h"
 #include "matchers.h"
 #include "temp_file_test_base.h"
@@ -105,6 +106,46 @@ class AvroReaderTest : public TempFileTestBase {
     ASSERT_FALSE(data.value().has_value());
   }
 
+  void WriteAndVerify(std::shared_ptr<Schema> schema,
+                      const std::string& expected_string) {
+    ArrowSchema arrow_c_schema;
+    ASSERT_THAT(ToArrowSchema(*schema, &arrow_c_schema), IsOk());
+
+    auto arrow_schema_result = ::arrow::ImportType(&arrow_c_schema);
+    ASSERT_TRUE(arrow_schema_result.ok());
+    auto arrow_schema = arrow_schema_result.ValueOrDie();
+
+    auto array_result = ::arrow::json::ArrayFromJSONString(arrow_schema, expected_string);
+    ASSERT_TRUE(array_result.ok());
+    auto array = array_result.ValueOrDie();
+
+    struct ArrowArray arrow_array;
+    auto export_result = ::arrow::ExportArray(*array, &arrow_array);
+    ASSERT_TRUE(export_result.ok());
+
+    auto writer_result = WriterFactoryRegistry::Open(
+        FileFormatType::kAvro,
+        {.path = temp_avro_file_, .schema = schema, .io = file_io_});
+    ASSERT_TRUE(writer_result.has_value());
+    auto writer = std::move(writer_result.value());
+    ASSERT_THAT(writer->Write(arrow_array), IsOk());
+    ASSERT_THAT(writer->Close(), IsOk());
+
+    auto file_info_result = local_fs_->GetFileInfo(temp_avro_file_);
+    ASSERT_TRUE(file_info_result.ok());
+    ASSERT_EQ(file_info_result->size(), writer->length().value());
+
+    auto reader_result = ReaderFactoryRegistry::Open(FileFormatType::kAvro,
+                                                     {.path = temp_avro_file_,
+                                                      .length = file_info_result->size(),
+                                                      .io = file_io_,
+                                                      .projection = schema});
+    ASSERT_THAT(reader_result, IsOk());
+    auto reader = std::move(reader_result.value());
+    ASSERT_NO_FATAL_FAILURE(VerifyNextBatch(*reader, expected_string));
+    ASSERT_NO_FATAL_FAILURE(VerifyExhausted(*reader));
+  }
+
   std::shared_ptr<::arrow::fs::LocalFileSystem> local_fs_;
   std::shared_ptr<FileIO> file_io_;
   std::string temp_avro_file_;
@@ -159,6 +200,30 @@ TEST_F(AvroReaderTest, ReadWithBatchSize) {
   ASSERT_NO_FATAL_FAILURE(VerifyNextBatch(*reader, R"([[1], [2]])"));
   ASSERT_NO_FATAL_FAILURE(VerifyNextBatch(*reader, R"([[3]])"));
   ASSERT_NO_FATAL_FAILURE(VerifyExhausted(*reader));
+}
+
+TEST_F(AvroReaderTest, AvroWriterBasicType) {
+  auto schema = std::make_shared<iceberg::Schema>(std::vector<SchemaField>{
+      SchemaField::MakeRequired(1, "name", std::make_shared<StringType>())});
+
+  std::string expected_string = R"([["Hello"], ["世界"], ["nanoarrow"]])";
+
+  WriteAndVerify(schema, expected_string);
+}
+
+TEST_F(AvroReaderTest, AvroWriterNestedType) {
+  auto schema = std::make_shared<iceberg::Schema>(std::vector<SchemaField>{
+      SchemaField::MakeRequired(1, "id", std::make_shared<IntType>()),
+      SchemaField::MakeRequired(
+          2, "info",
+          std::make_shared<iceberg::StructType>(std::vector<SchemaField>{
+              SchemaField::MakeRequired(3, "name", std::make_shared<StringType>()),
+              SchemaField::MakeRequired(4, "age", std::make_shared<IntType>())}))});
+
+  std::string expected_string =
+      R"([[1, ["Alice", 25]], [2, ["Bob", 30]], [3, ["Ivy", 35]]])";
+
+  WriteAndVerify(schema, expected_string);
 }
 
 }  // namespace iceberg::avro

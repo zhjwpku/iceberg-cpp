@@ -26,14 +26,17 @@
 #include <arrow/record_batch.h>
 #include <arrow/result.h>
 #include <avro/DataFile.hh>
+#include <avro/Generic.hh>
 #include <avro/GenericDatum.hh>
 
 #include "iceberg/arrow/arrow_error_transform_internal.h"
 #include "iceberg/arrow/arrow_fs_file_io_internal.h"
+#include "iceberg/avro/avro_data_util_internal.h"
 #include "iceberg/avro/avro_register.h"
 #include "iceberg/avro/avro_schema_util_internal.h"
 #include "iceberg/avro/avro_stream_internal.h"
 #include "iceberg/schema.h"
+#include "iceberg/schema_internal.h"
 #include "iceberg/util/checked_cast.h"
 #include "iceberg/util/macros.h"
 
@@ -50,9 +53,6 @@ Result<std::unique_ptr<AvroOutputStream>> CreateOutputStream(const WriterOptions
 
 }  // namespace
 
-// A stateful context to keep track of the writing progress.
-struct WriteContext {};
-
 class AvroWriter::Impl {
  public:
   Status Open(const WriterOptions& options) {
@@ -67,15 +67,23 @@ class AvroWriter::Impl {
     constexpr int64_t kDefaultBufferSize = 1024 * 1024;
     ICEBERG_ASSIGN_OR_RAISE(auto output_stream,
                             CreateOutputStream(options, kDefaultBufferSize));
-
+    arrow_output_stream_ = output_stream->arrow_output_stream();
     writer_ = std::make_unique<::avro::DataFileWriter<::avro::GenericDatum>>(
         std::move(output_stream), *avro_schema_);
+    datum_ = std::make_unique<::avro::GenericDatum>(*avro_schema_);
+    ICEBERG_RETURN_UNEXPECTED(ToArrowSchema(*write_schema_, &arrow_schema_));
     return {};
   }
 
-  Status Write(ArrowArray /*data*/) {
-    // TODO(xiao.dong) convert data and write to avro
-    // total_bytes_+= written_bytes;
+  Status Write(ArrowArray data) {
+    ICEBERG_ARROW_ASSIGN_OR_RETURN(auto result,
+                                   ::arrow::ImportArray(&data, &arrow_schema_));
+
+    for (int64_t i = 0; i < result->length(); i++) {
+      ICEBERG_RETURN_UNEXPECTED(ExtractDatumFromArray(*result, i, datum_.get()));
+      writer_->write(*datum_);
+    }
+
     return {};
   }
 
@@ -83,6 +91,8 @@ class AvroWriter::Impl {
     if (writer_ != nullptr) {
       writer_->close();
       writer_.reset();
+      ICEBERG_ARROW_ASSIGN_OR_RETURN(total_bytes_, arrow_output_stream_->Tell());
+      ICEBERG_ARROW_RETURN_NOT_OK(arrow_output_stream_->Close());
     }
     return {};
   }
@@ -92,13 +102,19 @@ class AvroWriter::Impl {
   int64_t length() { return total_bytes_; }
 
  private:
-  int64_t total_bytes_ = 0;
   // The schema to write.
   std::shared_ptr<::iceberg::Schema> write_schema_;
   // The avro schema to write.
   std::shared_ptr<::avro::ValidSchema> avro_schema_;
+  // Arrow output stream of the Avro file to write
+  std::shared_ptr<::arrow::io::OutputStream> arrow_output_stream_;
   // The avro writer to write the data into a datum.
   std::unique_ptr<::avro::DataFileWriter<::avro::GenericDatum>> writer_;
+  // Reusable Avro datum for writing individual records.
+  std::unique_ptr<::avro::GenericDatum> datum_;
+  // Arrow schema to write data.
+  ArrowSchema arrow_schema_;
+  int64_t total_bytes_ = 0;
 };
 
 AvroWriter::~AvroWriter() = default;
