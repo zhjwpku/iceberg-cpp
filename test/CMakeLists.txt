@@ -93,6 +93,8 @@ add_iceberg_test(util_test
                  string_util_test.cc
                  visit_type_test.cc)
 
+add_iceberg_test(roaring_test SOURCES roaring_test.cc)
+
 if(ICEBERG_BUILD_BUNDLE)
   add_iceberg_test(avro_test
                    USE_BUNDLE

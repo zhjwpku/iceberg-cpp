@@ -262,6 +262,54 @@ function(resolve_nanoarrow_dependency)
 endfunction()
 
 # ----------------------------------------------------------------------
+# CRoaring
+
+function(resolve_croaring_dependency)
+  prepare_fetchcontent()
+
+  set(BUILD_TESTING
+      OFF
+      CACHE BOOL "Disable CRoaring tests" FORCE)
+
+  fetchcontent_declare(croaring
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       URL "https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v4.3.11.tar.gz"
+                           FIND_PACKAGE_ARGS
+                           NAMES
+                           roaring
+                           CONFIG)
+  fetchcontent_makeavailable(croaring)
+
+  if(croaring_SOURCE_DIR)
+    if(NOT TARGET roaring::roaring)
+      add_library(roaring::roaring INTERFACE IMPORTED)
+      target_link_libraries(roaring::roaring INTERFACE roaring)
+      target_include_directories(roaring::roaring INTERFACE ${croaring_BINARY_DIR}
+                                                            ${croaring_SOURCE_DIR}/cpp)
+    endif()
+
+    set(CROARING_VENDORED TRUE)
+    set_target_properties(roaring PROPERTIES OUTPUT_NAME "iceberg_vendored_croaring"
+                                             POSITION_INDEPENDENT_CODE ON)
+    install(TARGETS roaring
+            EXPORT iceberg_targets
+            RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+            ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
+  else()
+    set(CROARING_VENDORED FALSE)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES roaring)
+  endif()
+
+  set(ICEBERG_SYSTEM_DEPENDENCIES
+      ${ICEBERG_SYSTEM_DEPENDENCIES}
+      PARENT_SCOPE)
+  set(CROARING_VENDORED
+      ${CROARING_VENDORED}
+      PARENT_SCOPE)
+endfunction()
+
+# ----------------------------------------------------------------------
 # nlohmann-json
 
 function(resolve_nlohmann_json_dependency)
@@ -398,6 +446,7 @@ endfunction()
 
 resolve_zlib_dependency()
 resolve_nanoarrow_dependency()
+resolve_croaring_dependency()
 resolve_nlohmann_json_dependency()
 resolve_spdlog_dependency()
 
