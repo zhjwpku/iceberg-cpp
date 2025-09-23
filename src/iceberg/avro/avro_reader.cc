@@ -173,6 +173,24 @@ class AvroReader::Impl {
     return arrow_schema;
   }
 
+  Result<std::unordered_map<std::string, std::string>> Metadata() {
+    if (reader_ == nullptr) {
+      return Invalid("Reader is not opened");
+    }
+
+    const auto& metadata = reader_->metadata();
+
+    std::unordered_map<std::string, std::string> metadata_map;
+    metadata_map.reserve(metadata.size());
+
+    for (const auto& pair : metadata) {
+      metadata_map.insert_or_assign(pair.first,
+                                    std::string(pair.second.begin(), pair.second.end()));
+    }
+
+    return metadata_map;
+  }
+
  private:
   Status InitReadContext() {
     context_ = std::make_unique<ReadContext>();
@@ -240,6 +258,10 @@ AvroReader::~AvroReader() = default;
 Result<std::optional<ArrowArray>> AvroReader::Next() { return impl_->Next(); }
 
 Result<ArrowSchema> AvroReader::Schema() { return impl_->Schema(); }
+
+Result<std::unordered_map<std::string, std::string>> AvroReader::Metadata() {
+  return impl_->Metadata();
+}
 
 Status AvroReader::Open(const ReaderOptions& options) {
   impl_ = std::make_unique<Impl>();
