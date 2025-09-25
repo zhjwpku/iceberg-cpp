@@ -430,6 +430,58 @@ function(resolve_zlib_dependency)
 endfunction()
 
 # ----------------------------------------------------------------------
+# cpr (C++ Requests)
+
+function(resolve_cpr_dependency)
+  prepare_fetchcontent()
+
+  set(CPR_BUILD_TESTS OFF)
+  set(CPR_ENABLE_CURL_HTTP_ONLY ON)
+  set(CPR_ENABLE_SSL ON)
+  set(CPR_USE_SYSTEM_CURL ON)
+
+  fetchcontent_declare(cpr
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       URL https://github.com/libcpr/cpr/archive/refs/tags/1.12.0.tar.gz
+                           FIND_PACKAGE_ARGS
+                           NAMES
+                           cpr
+                           CONFIG)
+
+  fetchcontent_makeavailable(cpr)
+
+  if(cpr_SOURCE_DIR)
+    if(NOT TARGET cpr::cpr)
+      add_library(cpr::cpr INTERFACE IMPORTED)
+      target_link_libraries(cpr::cpr INTERFACE cpr)
+      target_include_directories(cpr::cpr INTERFACE ${cpr_BINARY_DIR}
+                                                    ${cpr_SOURCE_DIR}/include)
+    endif()
+
+    set(CPR_VENDORED TRUE)
+    set_target_properties(cpr PROPERTIES OUTPUT_NAME "iceberg_vendored_cpr"
+                                         POSITION_INDEPENDENT_CODE ON)
+    add_library(Iceberg::cpr ALIAS cpr)
+    install(TARGETS cpr
+            EXPORT iceberg_targets
+            RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
+            ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES OpenSSL)
+  else()
+    set(CPR_VENDORED FALSE)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES cpr)
+  endif()
+
+  set(ICEBERG_SYSTEM_DEPENDENCIES
+      ${ICEBERG_SYSTEM_DEPENDENCIES}
+      PARENT_SCOPE)
+  set(CPR_VENDORED
+      ${CPR_VENDORED}
+      PARENT_SCOPE)
+endfunction()
+
+# ----------------------------------------------------------------------
 # Zstd
 
 function(resolve_zstd_dependency)
@@ -453,4 +505,8 @@ if(ICEBERG_BUILD_BUNDLE)
   resolve_arrow_dependency()
   resolve_avro_dependency()
   resolve_zstd_dependency()
+endif()
+
+if(ICEBERG_BUILD_REST)
+  resolve_cpr_dependency()
 endif()
