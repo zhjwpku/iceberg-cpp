@@ -138,6 +138,13 @@ class Reader;
 class Writer;
 
 class StructLike;
+class ArrayLike;
+class MapLike;
+
+/// ----------------------------------------------------------------------------
+/// TODO: Forward declarations below are not added yet.
+/// ----------------------------------------------------------------------------
+
 class MetadataUpdate;
 class UpdateRequirement;
 class AppendFiles;
