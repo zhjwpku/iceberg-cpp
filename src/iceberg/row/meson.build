@@ -15,22 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-header:
-  license:
-    spdx-id: Apache-2.0
-    copyright-owner: Apache Software Foundation
-
-  paths:
-    - '**'
-
-  paths-ignore:
-    - '**/.gitignore'
-    - '.github/**'
-    - 'LICENSE'
-    - 'NOTICE'
-    - 'requirements.txt'
-    - 'src/iceberg/expected.h'
-    - 'src/iceberg/util/murmurhash3_internal.*'
-    - 'src/iceberg/test/resources/**'
-
-  comment: on-failure
+install_headers(
+    ['arrow_array_wrapper.h', 'manifest_wrapper.h', 'struct_like.h'],
+    subdir: 'iceberg/row',
+)

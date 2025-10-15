@@ -15,22 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-header:
-  license:
-    spdx-id: Apache-2.0
-    copyright-owner: Apache Software Foundation
+[wrap-file]
+directory = CRoaring-4.3.11
+source_url = https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v4.3.11.tar.gz
+source_filename = CRoaring-4.3.11.tar.gz
+source_hash = acd3a17e6c95acf3154d60c38c90e927e6c531805bc740a040fa111819af380e
+patch_filename = croaring_4.3.11-1_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/croaring_4.3.11-1/get_patch
+patch_hash = ff26efa0b7e7bc24963e169ab1a4e15598fdfcb5f0b6db9f28eca9e26c22bb4a
+source_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/croaring_4.3.11-1/CRoaring-4.3.11.tar.gz
+wrapdb_version = 4.3.11-1
 
-  paths:
-    - '**'
-
-  paths-ignore:
-    - '**/.gitignore'
-    - '.github/**'
-    - 'LICENSE'
-    - 'NOTICE'
-    - 'requirements.txt'
-    - 'src/iceberg/expected.h'
-    - 'src/iceberg/util/murmurhash3_internal.*'
-    - 'src/iceberg/test/resources/**'
-
-  comment: on-failure
+[provide]
+dependency_names = croaring

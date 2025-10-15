@@ -15,22 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-header:
-  license:
-    spdx-id: Apache-2.0
-    copyright-owner: Apache Software Foundation
+project(
+    'iceberg',
+    'cpp',
+    version: '0.2.0',
+    license: 'Apache-2.0',
+    meson_version: '>=1.3.0',
+    default_options: [
+        'cpp_std=c++23,c++latest',
+        'warning_level=2',
+        # Don't build any tests for curl
+        'curl:tests=disabled',
+        'curl:unittests=disabled',
+    ],
+)
 
-  paths:
-    - '**'
+subdir('src')
 
-  paths-ignore:
-    - '**/.gitignore'
-    - '.github/**'
-    - 'LICENSE'
-    - 'NOTICE'
-    - 'requirements.txt'
-    - 'src/iceberg/expected.h'
-    - 'src/iceberg/util/murmurhash3_internal.*'
-    - 'src/iceberg/test/resources/**'
-
-  comment: on-failure
+install_data(
+    ['LICENSE', 'NOTICE'],
+    install_dir: get_option('datadir') / 'doc/iceberg',
+)
