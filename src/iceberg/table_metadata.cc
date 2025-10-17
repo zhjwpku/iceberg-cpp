@@ -19,11 +19,13 @@
 
 #include "iceberg/table_metadata.h"
 
+#include <algorithm>
 #include <format>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
+#include "iceberg/exception.h"
 #include "iceberg/file_io.h"
 #include "iceberg/json_internal.h"
 #include "iceberg/partition_spec.h"
@@ -31,6 +33,7 @@
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/sort_order.h"
+#include "iceberg/table_update.h"
 #include "iceberg/util/gzip_internal.h"
 #include "iceberg/util/macros.h"
 
@@ -194,6 +197,192 @@ Status TableMetadataUtil::Write(FileIO& io, const std::string& location,
   auto json = ToJson(metadata);
   ICEBERG_ASSIGN_OR_RAISE(auto json_string, ToJsonString(json));
   return io.WriteFile(location, json_string);
+}
+
+// TableMetadataBuilder implementation
+
+struct TableMetadataBuilder::Impl {};
+
+TableMetadataBuilder::TableMetadataBuilder(int8_t format_version)
+    : impl_(std::make_unique<Impl>()) {}
+
+TableMetadataBuilder::TableMetadataBuilder(const TableMetadata* base)
+    : impl_(std::make_unique<Impl>()) {}
+
+TableMetadataBuilder::~TableMetadataBuilder() = default;
+
+TableMetadataBuilder::TableMetadataBuilder(TableMetadataBuilder&&) noexcept = default;
+
+TableMetadataBuilder& TableMetadataBuilder::operator=(TableMetadataBuilder&&) noexcept =
+    default;
+
+std::unique_ptr<TableMetadataBuilder> TableMetadataBuilder::BuildFromEmpty(
+    int8_t format_version) {
+  return std::unique_ptr<TableMetadataBuilder>(
+      new TableMetadataBuilder(format_version));  // NOLINT
+}
+
+std::unique_ptr<TableMetadataBuilder> TableMetadataBuilder::BuildFrom(
+    const TableMetadata* base) {
+  return std::unique_ptr<TableMetadataBuilder>(new TableMetadataBuilder(base));  // NOLINT
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetMetadataLocation(
+    std::string_view metadata_location) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetPreviousMetadataLocation(
+    std::string_view previous_metadata_location) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AssignUUID() {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AssignUUID(std::string_view uuid) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+  ;
+}
+
+TableMetadataBuilder& TableMetadataBuilder::UpgradeFormatVersion(
+    int8_t new_format_version) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetCurrentSchema(
+    std::shared_ptr<Schema> schema, int32_t new_last_column_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetCurrentSchema(int32_t schema_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AddSchema(std::shared_ptr<Schema> schema) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetDefaultPartitionSpec(
+    std::shared_ptr<PartitionSpec> spec) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetDefaultPartitionSpec(int32_t spec_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AddPartitionSpec(
+    std::shared_ptr<PartitionSpec> spec) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemovePartitionSpecs(
+    const std::vector<int32_t>& spec_ids) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveSchemas(
+    const std::vector<int32_t>& schema_ids) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetDefaultSortOrder(
+    std::shared_ptr<SortOrder> order) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetDefaultSortOrder(int32_t order_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AddSortOrder(
+    std::shared_ptr<SortOrder> order) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AddSnapshot(
+    std::shared_ptr<Snapshot> snapshot) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetBranchSnapshot(int64_t snapshot_id,
+                                                              const std::string& branch) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetRef(const std::string& name,
+                                                   std::shared_ptr<SnapshotRef> ref) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveRef(const std::string& name) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveSnapshots(
+    const std::vector<std::shared_ptr<Snapshot>>& snapshots_to_remove) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveSnapshots(
+    const std::vector<int64_t>& snapshot_ids) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::suppressHistoricalSnapshots() {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetStatistics(
+    const std::shared_ptr<StatisticsFile>& statistics_file) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveStatistics(int64_t snapshot_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetPartitionStatistics(
+    const std::shared_ptr<PartitionStatisticsFile>& partition_statistics_file) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemovePartitionStatistics(
+    int64_t snapshot_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetProperties(
+    const std::unordered_map<std::string, std::string>& updated) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveProperties(
+    const std::vector<std::string>& removed) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::SetLocation(std::string_view location) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::AddEncryptionKey(
+    std::shared_ptr<EncryptedKey> key) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::RemoveEncryptionKey(std::string_view key_id) {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+TableMetadataBuilder& TableMetadataBuilder::DiscardChanges() {
+  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+}
+
+Result<std::unique_ptr<TableMetadata>> TableMetadataBuilder::Build() {
+  return NotImplemented("TableMetadataBuilder::Build not implemented");
 }
 
 }  // namespace iceberg

@@ -144,6 +144,273 @@ ICEBERG_EXPORT std::string ToString(const SnapshotLogEntry& entry);
 /// \brief Returns a string representation of a MetadataLogEntry
 ICEBERG_EXPORT std::string ToString(const MetadataLogEntry& entry);
 
+/// \brief Builder class for constructing TableMetadata objects
+///
+/// This builder provides a fluent interface for creating and modifying table metadata.
+/// It supports both creating new tables and building from existing metadata.
+///
+/// Each modification method generates a corresponding MetadataUpdate that is tracked
+/// in a changes list. This allows the builder to maintain a complete history of all
+/// modifications made to the table metadata, which is important for tracking table
+/// evolution and for serialization purposes.
+///
+/// If a modification violates Iceberg table constraints (e.g., setting a current
+/// schema ID that does not exist), an error will be recorded and returned when
+/// Build() is called.
+class ICEBERG_EXPORT TableMetadataBuilder {
+ public:
+  /// \brief Create a builder for a new table
+  ///
+  /// \param format_version The format version for the table
+  /// \return A new TableMetadataBuilder instance
+  static std::unique_ptr<TableMetadataBuilder> BuildFromEmpty(
+      int8_t format_version = TableMetadata::kDefaultTableFormatVersion);
+
+  /// \brief Create a builder from existing table metadata
+  ///
+  /// \param base The base table metadata to build from
+  /// \return A new TableMetadataBuilder instance initialized with base metadata
+  static std::unique_ptr<TableMetadataBuilder> BuildFrom(const TableMetadata* base);
+
+  /// \brief Set the metadata location of the table
+  ///
+  /// \param metadata_location The new metadata location
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetMetadataLocation(std::string_view metadata_location);
+
+  /// \brief Set the previous metadata location of the table
+  ///
+  /// \param previous_metadata_location The previous metadata location
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetPreviousMetadataLocation(
+      std::string_view previous_metadata_location);
+
+  /// \brief Assign a UUID to the table
+  ///
+  /// If no UUID is provided, a random UUID will be generated.
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AssignUUID();
+
+  /// \brief Assign a specific UUID to the table
+  ///
+  /// \param uuid The UUID string to assign
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AssignUUID(std::string_view uuid);
+
+  /// \brief Upgrade the format version of the table
+  ///
+  /// \param new_format_version The new format version (must be >= current version)
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& UpgradeFormatVersion(int8_t new_format_version);
+
+  /// \brief Set the current schema for the table
+  ///
+  /// \param schema The schema to set as current
+  /// \param new_last_column_id The highest column ID in the schema
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetCurrentSchema(std::shared_ptr<Schema> schema,
+                                         int32_t new_last_column_id);
+
+  /// \brief Set the current schema by schema ID
+  ///
+  /// \param schema_id The ID of the schema to set as current
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetCurrentSchema(int32_t schema_id);
+
+  /// \brief Add a schema to the table
+  ///
+  /// \param schema The schema to add
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AddSchema(std::shared_ptr<Schema> schema);
+
+  /// \brief Set the default partition spec for the table
+  ///
+  /// \param spec The partition spec to set as default
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetDefaultPartitionSpec(std::shared_ptr<PartitionSpec> spec);
+
+  /// \brief Set the default partition spec by spec ID
+  ///
+  /// \param spec_id The ID of the partition spec to set as default
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetDefaultPartitionSpec(int32_t spec_id);
+
+  /// \brief Add a partition spec to the table
+  ///
+  /// \param spec The partition spec to add
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AddPartitionSpec(std::shared_ptr<PartitionSpec> spec);
+
+  /// \brief Remove partition specs from the table
+  ///
+  /// \param spec_ids The IDs of partition specs to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemovePartitionSpecs(const std::vector<int32_t>& spec_ids);
+
+  /// \brief Remove schemas from the table
+  ///
+  /// \param schema_ids The IDs of schemas to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveSchemas(const std::vector<int32_t>& schema_ids);
+
+  /// \brief Set the default sort order for the table
+  ///
+  /// \param order The sort order to set as default
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetDefaultSortOrder(std::shared_ptr<SortOrder> order);
+
+  /// \brief Set the default sort order by order ID
+  ///
+  /// \param order_id The ID of the sort order to set as default
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetDefaultSortOrder(int32_t order_id);
+
+  /// \brief Add a sort order to the table
+  ///
+  /// \param order The sort order to add
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AddSortOrder(std::shared_ptr<SortOrder> order);
+
+  /// \brief Add a snapshot to the table
+  ///
+  /// \param snapshot The snapshot to add
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AddSnapshot(std::shared_ptr<Snapshot> snapshot);
+
+  /// \brief Set a branch to point to a specific snapshot
+  ///
+  /// \param snapshot_id The snapshot ID the branch should reference
+  /// \param branch The name of the branch
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetBranchSnapshot(int64_t snapshot_id, const std::string& branch);
+
+  /// \brief Set a snapshot reference
+  ///
+  /// \param name The name of the reference
+  /// \param ref The snapshot reference to set
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetRef(const std::string& name, std::shared_ptr<SnapshotRef> ref);
+
+  /// \brief Remove a snapshot reference
+  ///
+  /// \param name The name of the reference to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveRef(const std::string& name);
+
+  /// \brief Remove snapshots from the table
+  ///
+  /// \param snapshots_to_remove The snapshots to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveSnapshots(
+      const std::vector<std::shared_ptr<Snapshot>>& snapshots_to_remove);
+
+  /// \brief Remove snapshots from the table
+  ///
+  /// \param snapshot_ids The IDs of snapshots to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveSnapshots(const std::vector<int64_t>& snapshot_ids);
+
+  /// \brief  Suppresses snapshots that are historical, removing the metadata for lazy
+  /// snapshot loading.
+  ///
+  /// Note that the snapshots are not considered removed from metadata and no
+  /// RemoveSnapshot changes are created. A snapshot is historical if no ref directly
+  /// references its ID.
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& suppressHistoricalSnapshots();
+
+  /// \brief Set table statistics
+  ///
+  /// \param statistics_file The statistics file to set
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetStatistics(
+      const std::shared_ptr<StatisticsFile>& statistics_file);
+
+  /// \brief Remove table statistics by snapshot ID
+  ///
+  /// \param snapshot_id The snapshot ID whose statistics to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveStatistics(int64_t snapshot_id);
+
+  /// \brief Set partition statistics
+  ///
+  /// \param partition_statistics_file The partition statistics file to set
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetPartitionStatistics(
+      const std::shared_ptr<PartitionStatisticsFile>& partition_statistics_file);
+
+  /// \brief Remove partition statistics by snapshot ID
+  ///
+  /// \param snapshot_id The snapshot ID whose partition statistics to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemovePartitionStatistics(int64_t snapshot_id);
+
+  /// \brief Set table properties
+  ///
+  /// \param updated Map of properties to set or update
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetProperties(
+      const std::unordered_map<std::string, std::string>& updated);
+
+  /// \brief Remove table properties
+  ///
+  /// \param removed Set of property keys to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveProperties(const std::vector<std::string>& removed);
+
+  /// \brief Set the table location
+  ///
+  /// \param location The table base location
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& SetLocation(std::string_view location);
+
+  /// \brief Add an encryption key to the table
+  ///
+  /// \param key The encryption key to add
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& AddEncryptionKey(std::shared_ptr<EncryptedKey> key);
+
+  /// \brief Remove an encryption key from the table by key ID
+  ///
+  /// \param key_id The ID of the encryption key to remove
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& RemoveEncryptionKey(std::string_view key_id);
+
+  /// \brief Discard all accumulated changes
+  ///
+  /// This is useful when you want to reset the builder state without
+  /// creating a new builder instance.
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& DiscardChanges();
+
+  /// \brief Build the TableMetadata object
+  ///
+  /// \return A Result containing the constructed TableMetadata or an error
+  Result<std::unique_ptr<TableMetadata>> Build();
+
+  /// \brief Destructor
+  ~TableMetadataBuilder();
+
+  // Delete copy operations (use BuildFrom to create a new builder)
+  TableMetadataBuilder(const TableMetadataBuilder&) = delete;
+  TableMetadataBuilder& operator=(const TableMetadataBuilder&) = delete;
+
+  // Enable move operations
+  TableMetadataBuilder(TableMetadataBuilder&&) noexcept;
+  TableMetadataBuilder& operator=(TableMetadataBuilder&&) noexcept;
+
+ private:
+  /// \brief Private constructor for building from empty state
+  explicit TableMetadataBuilder(int8_t format_version);
+
+  /// \brief Private constructor for building from existing metadata
+  explicit TableMetadataBuilder(const TableMetadata* base);
+
+  /// Internal state members
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
 /// \brief The codec type of the table metadata file.
 enum class ICEBERG_EXPORT MetadataFileCodecType {
   kNone,
