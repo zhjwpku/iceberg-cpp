@@ -19,9 +19,11 @@
 
 #include "iceberg/v2_metadata.h"
 
+#include "iceberg/json_internal.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/manifest_list.h"
 #include "iceberg/schema.h"
+#include "iceberg/util/macros.h"
 
 namespace iceberg {
 
@@ -50,16 +52,15 @@ Status ManifestEntryAdapterV2::Init() {
       DataFile::kSortOrderId.field_id(),
       DataFile::kReferencedDataFile.field_id(),
   };
-  // TODO(xiao.dong) schema to json
-  metadata_["schema"] = "{}";
-  // TODO(xiao.dong) partition spec to json
-  metadata_["partition-spec"] = "{}";
+  ICEBERG_RETURN_UNEXPECTED(InitSchema(kManifestEntryFieldIds));
+  ICEBERG_ASSIGN_OR_RAISE(metadata_["schema"], ToJsonString(*manifest_schema_))
   if (partition_spec_ != nullptr) {
+    ICEBERG_ASSIGN_OR_RAISE(metadata_["partition-spec"], ToJsonString(*partition_spec_));
     metadata_["partition-spec-id"] = std::to_string(partition_spec_->spec_id());
   }
   metadata_["format-version"] = "2";
   metadata_["content"] = "data";
-  return InitSchema(kManifestEntryFieldIds);
+  return {};
 }
 
 Status ManifestEntryAdapterV2::Append(const ManifestEntry& entry) {
