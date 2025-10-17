@@ -30,8 +30,8 @@
 #include <parquet/arrow/writer.h>
 #include <parquet/metadata.h>
 
-#include "iceberg/arrow/arrow_error_transform_internal.h"
 #include "iceberg/arrow/arrow_fs_file_io_internal.h"
+#include "iceberg/arrow/arrow_status_internal.h"
 #include "iceberg/file_reader.h"
 #include "iceberg/file_writer.h"
 #include "iceberg/parquet/parquet_register.h"
@@ -51,7 +51,7 @@ namespace {
 Status WriteArray(std::shared_ptr<::arrow::Array> data, Writer& writer) {
   ArrowArray arr;
   ICEBERG_ARROW_RETURN_NOT_OK(::arrow::ExportArray(*data, &arr));
-  ICEBERG_RETURN_UNEXPECTED(writer.Write(arr));
+  ICEBERG_RETURN_UNEXPECTED(writer.Write(&arr));
   return writer.Close();
 }
 
