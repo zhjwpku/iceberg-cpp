@@ -20,6 +20,7 @@
 #include "iceberg/util/temporal_util.h"
 
 #include <chrono>
+#include <cstdint>
 #include <utility>
 
 #include "iceberg/expression/literal.h"
