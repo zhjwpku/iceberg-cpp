@@ -38,6 +38,7 @@ iceberg_tests = {
             'schema_util_test.cc',
             'snapshot_test.cc',
             'sort_field_test.cc',
+            'sort_order_builder_test.cc',
             'sort_order_test.cc',
             'transform_test.cc',
             'type_test.cc',

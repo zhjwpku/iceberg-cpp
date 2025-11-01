@@ -73,6 +73,7 @@ add_iceberg_test(schema_test
                  partition_field_test.cc
                  partition_spec_test.cc
                  sort_field_test.cc
+                 sort_order_builder_test.cc
                  sort_order_test.cc
                  snapshot_test.cc
                  schema_util_test.cc)

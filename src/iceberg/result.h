@@ -48,6 +48,7 @@ enum class ErrorKind {
   kNotFound,
   kNotImplemented,
   kNotSupported,
+  kValidationError,
   kUnknownError,
 };
 
@@ -97,6 +98,7 @@ DEFINE_ERROR_FUNCTION(NotAllowed)
 DEFINE_ERROR_FUNCTION(NotFound)
 DEFINE_ERROR_FUNCTION(NotImplemented)
 DEFINE_ERROR_FUNCTION(NotSupported)
+DEFINE_ERROR_FUNCTION(ValidationError)
 DEFINE_ERROR_FUNCTION(UnknownError)
 
 #undef DEFINE_ERROR_FUNCTION
