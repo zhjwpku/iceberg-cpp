@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-iceberg_rest_sources = files('rest_catalog.cc')
+iceberg_rest_sources = files('json_internal.cc', 'rest_catalog.cc')
 # cpr does not export symbols, so on Windows it must
 # be used as a static lib
 cpr_needs_static = (
