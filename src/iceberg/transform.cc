@@ -21,6 +21,7 @@
 
 #include <format>
 #include <regex>
+#include <utility>
 
 #include "iceberg/transform_function.h"
 #include "iceberg/type.h"
@@ -122,6 +123,52 @@ Result<std::shared_ptr<TransformFunction>> Transform::Bind(
     default:
       return NotSupported("Unsupported transform type: '{}'", type_str);
   }
+}
+
+bool Transform::PreservesOrder() const {
+  switch (transform_type_) {
+    case TransformType::kUnknown:
+    case TransformType::kVoid:
+    case TransformType::kBucket:
+      return false;
+    case TransformType::kIdentity:
+    case TransformType::kTruncate:
+    case TransformType::kYear:
+    case TransformType::kMonth:
+    case TransformType::kDay:
+    case TransformType::kHour:
+      return true;
+  }
+  std::unreachable();
+}
+
+bool Transform::SatisfiesOrderOf(const Transform& other) const {
+  auto other_type = other.transform_type();
+  switch (transform_type_) {
+    case TransformType::kIdentity:
+      // ordering by value is the same as long as the other preserves order
+      return other.PreservesOrder();
+    case TransformType::kTruncate: {
+      if (other_type != TransformType::kTruncate) {
+        return false;
+      }
+      return std::get<int32_t>(param_) >= std::get<int32_t>(other.param_);
+    }
+    case TransformType::kHour:
+      return other_type == TransformType::kHour || other_type == TransformType::kDay ||
+             other_type == TransformType::kMonth || other_type == TransformType::kYear;
+    case TransformType::kDay:
+      return other_type == TransformType::kDay || other_type == TransformType::kMonth ||
+             other_type == TransformType::kYear;
+    case TransformType::kMonth:
+      return other_type == TransformType::kMonth || other_type == TransformType::kYear;
+    case TransformType::kYear:
+    case TransformType::kBucket:
+    case TransformType::kUnknown:
+    case TransformType::kVoid:
+      return *this == other;
+  }
+  std::unreachable();
 }
 
 bool TransformFunction::Equals(const TransformFunction& other) const {
