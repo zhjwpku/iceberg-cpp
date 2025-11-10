@@ -125,6 +125,75 @@ Result<std::shared_ptr<TransformFunction>> Transform::Bind(
   }
 }
 
+bool Transform::CanTransform(const Type& source_type) const {
+  switch (transform_type_) {
+    case TransformType::kIdentity:
+      if (!source_type.is_primitive()) [[unlikely]] {
+        return false;
+      }
+      return true;
+    case TransformType::kVoid:
+    case TransformType::kUnknown:
+      return true;
+    case TransformType::kBucket:
+      switch (source_type.type_id()) {
+        case TypeId::kInt:
+        case TypeId::kLong:
+        case TypeId::kDecimal:
+        case TypeId::kDate:
+        case TypeId::kTime:
+        case TypeId::kTimestamp:
+        case TypeId::kTimestampTz:
+        case TypeId::kString:
+        case TypeId::kUuid:
+        case TypeId::kFixed:
+        case TypeId::kBinary:
+          return true;
+        default:
+          return false;
+      }
+    case TransformType::kTruncate:
+      switch (source_type.type_id()) {
+        case TypeId::kInt:
+        case TypeId::kLong:
+        case TypeId::kString:
+        case TypeId::kBinary:
+        case TypeId::kDecimal:
+          return true;
+        default:
+          return false;
+      }
+    case TransformType::kYear:
+    case TransformType::kMonth:
+      switch (source_type.type_id()) {
+        case TypeId::kDate:
+        case TypeId::kTimestamp:
+        case TypeId::kTimestampTz:
+          return true;
+        default:
+          return false;
+      }
+    case TransformType::kDay:
+      switch (source_type.type_id()) {
+        case TypeId::kDate:
+        case TypeId::kTimestamp:
+        case TypeId::kTimestampTz:
+          return true;
+        default:
+          return false;
+      }
+    case TransformType::kHour:
+      switch (source_type.type_id()) {
+        case TypeId::kTimestamp:
+        case TypeId::kTimestampTz:
+          return true;
+        default:
+          return false;
+      }
+  }
+  std::unreachable();
+}
+
 bool Transform::PreservesOrder() const {
   switch (transform_type_) {
     case TransformType::kUnknown:
