@@ -75,6 +75,9 @@ class MockCatalog : public Catalog {
 
   MOCK_METHOD(Status, DropTable, (const TableIdentifier&, bool), (override));
 
+  MOCK_METHOD(Status, RenameTable, (const TableIdentifier&, const TableIdentifier&),
+              (override));
+
   MOCK_METHOD((Result<std::unique_ptr<Table>>), LoadTable, (const TableIdentifier&),
               (override));
 

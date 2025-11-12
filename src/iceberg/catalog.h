@@ -161,6 +161,15 @@ class ICEBERG_EXPORT Catalog {
   ///         - On failure, contains error information.
   virtual Status DropTable(const TableIdentifier& identifier, bool purge) = 0;
 
+  /// \brief Rename a table
+  ///
+  /// \param from the current table identifier
+  /// \param to the new table identifier
+  /// \return Status indicating the outcome of the operation.
+  ///         - On success, the table was renamed.
+  ///         - On failure, contains error information.
+  virtual Status RenameTable(const TableIdentifier& from, const TableIdentifier& to) = 0;
+
   /// \brief Load a table
   ///
   /// \param identifier a table identifier

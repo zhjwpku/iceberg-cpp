@@ -415,6 +415,12 @@ Status InMemoryCatalog::DropTable(const TableIdentifier& identifier, bool purge)
   return root_namespace_->UnregisterTable(identifier);
 }
 
+Status InMemoryCatalog::RenameTable(const TableIdentifier& from,
+                                    const TableIdentifier& to) {
+  std::unique_lock lock(mutex_);
+  return NotImplemented("rename table");
+}
+
 Result<std::unique_ptr<Table>> InMemoryCatalog::LoadTable(
     const TableIdentifier& identifier) {
   if (!file_io_) [[unlikely]] {

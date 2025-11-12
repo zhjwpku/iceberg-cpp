@@ -21,8 +21,10 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "iceberg/iceberg_export.h"
+#include "iceberg/result.h"
 #include "iceberg/type_fwd.h"
 
 namespace iceberg {
@@ -44,10 +46,12 @@ class ICEBERG_EXPORT Transaction {
 
   /// \brief Apply the pending changes from all actions and commit
   ///
-  /// May throw ValidationException if any update cannot be applied to the current table
-  /// metadata. May throw CommitFailedException if the updates cannot be committed due to
-  /// conflicts.
-  virtual void CommitTransaction() = 0;
+  /// This method applies all pending data operations and metadata updates in the
+  /// transaction and commits them to the table in a single atomic operation.
+  ///
+  /// \return Status::OK if the transaction was committed successfully, or an error
+  ///         status if validation failed or the commit encountered conflicts
+  virtual Status CommitTransaction() = 0;
 };
 
 }  // namespace iceberg
