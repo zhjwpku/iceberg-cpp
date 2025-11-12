@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "iceberg/iceberg_export.h"
+#include "iceberg/result.h"
 
 namespace iceberg {
 
@@ -38,6 +39,14 @@ struct ICEBERG_EXPORT Namespace {
 struct ICEBERG_EXPORT TableIdentifier {
   Namespace ns;
   std::string name;
+
+  /// \brief Validates the TableIdentifier.
+  Status Validate() const {
+    if (name.empty()) {
+      return Invalid("Invalid table identifier: missing table name");
+    }
+    return {};
+  }
 };
 
 }  // namespace iceberg
