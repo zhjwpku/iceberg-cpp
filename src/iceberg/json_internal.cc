@@ -533,7 +533,8 @@ Result<std::unique_ptr<PartitionField>> PartitionFieldFromJson(
 }
 
 Result<std::unique_ptr<PartitionSpec>> PartitionSpecFromJson(
-    const std::shared_ptr<Schema>& schema, const nlohmann::json& json) {
+    const std::shared_ptr<Schema>& schema, const nlohmann::json& json,
+    int32_t default_spec_id) {
   ICEBERG_ASSIGN_OR_RAISE(auto spec_id, GetJsonValue<int32_t>(json, kSpecId));
   ICEBERG_ASSIGN_OR_RAISE(auto fields, GetJsonValue<nlohmann::json>(json, kFields));
 
@@ -542,9 +543,18 @@ Result<std::unique_ptr<PartitionSpec>> PartitionSpecFromJson(
     ICEBERG_ASSIGN_OR_RAISE(auto partition_field, PartitionFieldFromJson(field_json));
     partition_fields.push_back(std::move(*partition_field));
   }
-  // TODO(Li Feiyang):use a new PartitionSpec::Make to find the source field of each
-  // partition field from schema and then verify it
-  return std::make_unique<PartitionSpec>(spec_id, std::move(partition_fields));
+
+  std::unique_ptr<PartitionSpec> spec;
+  if (default_spec_id == spec_id) {
+    ICEBERG_ASSIGN_OR_RAISE(
+        spec, PartitionSpec::Make(*schema, spec_id, std::move(partition_fields),
+                                  /*allow_missing_fields=*/false));
+  } else {
+    ICEBERG_ASSIGN_OR_RAISE(
+        spec, PartitionSpec::Make(*schema, spec_id, std::move(partition_fields),
+                                  /*allow_missing_fields=*/true));
+  }
+  return spec;
 }
 
 Result<std::unique_ptr<SnapshotRef>> SnapshotRefFromJson(const nlohmann::json& json) {
@@ -885,8 +895,8 @@ Status ParsePartitionSpecs(const nlohmann::json& json, int8_t format_version,
     ICEBERG_ASSIGN_OR_RAISE(default_spec_id, GetJsonValue<int32_t>(json, kDefaultSpecId));
 
     for (const auto& spec_json : spec_array) {
-      ICEBERG_ASSIGN_OR_RAISE(auto spec,
-                              PartitionSpecFromJson(current_schema, spec_json));
+      ICEBERG_ASSIGN_OR_RAISE(
+          auto spec, PartitionSpecFromJson(current_schema, spec_json, default_spec_id));
       partition_specs.push_back(std::move(spec));
     }
   } else {
@@ -917,10 +927,11 @@ Status ParsePartitionSpecs(const nlohmann::json& json, int8_t format_version,
                           std::move(field->transform()));
     }
 
-    // TODO(Li Feiyang):use a new PartitionSpec::Make to find the source field of each
-    // partition field from schema and then verify it
-    auto spec =
-        std::make_unique<PartitionSpec>(PartitionSpec::kInitialSpecId, std::move(fields));
+    // Create partition spec with schema validation
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto spec,
+        PartitionSpec::Make(*current_schema, PartitionSpec::kInitialSpecId,
+                            std::move(fields), /*allow_missing_fields=*/false));
     default_spec_id = spec->spec_id();
     partition_specs.push_back(std::move(spec));
   }

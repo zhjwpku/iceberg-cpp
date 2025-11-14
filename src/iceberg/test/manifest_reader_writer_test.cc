@@ -34,6 +34,7 @@
 #include "iceberg/test/temp_file_test_base.h"
 #include "iceberg/test/test_common.h"
 #include "iceberg/transform.h"
+#include "iceberg/type.h"
 
 namespace iceberg {
 
@@ -186,7 +187,8 @@ TEST_F(ManifestV1Test, WritePartitionedTest) {
   auto identity_transform = Transform::Identity();
   std::vector<PartitionField> fields{
       PartitionField(1, 1000, "order_ts_hour", identity_transform)};
-  auto partition_spec = std::make_shared<PartitionSpec>(1, fields);
+  ICEBERG_UNWRAP_OR_FAIL(std::shared_ptr<PartitionSpec> partition_spec,
+                         PartitionSpec::Make(*table_schema, 1, fields, false));
 
   auto expected_entries = PreparePartitionedTestData();
   auto write_manifest_path = CreateNewTempFilePath();
