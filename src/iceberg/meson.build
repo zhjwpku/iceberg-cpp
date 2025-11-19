@@ -65,6 +65,7 @@ iceberg_sources = files(
     'partition_spec.cc',
     'row/arrow_array_wrapper.cc',
     'row/manifest_wrapper.cc',
+    'row/struct_like.cc',
     'schema.cc',
     'schema_field.cc',
     'schema_internal.cc',
