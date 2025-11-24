@@ -24,3 +24,7 @@ endif()
 if(ICEBERG_BUILD_HIVE)
   add_subdirectory(hive)
 endif()
+
+if(ICEBERG_BUILD_SQL_CATALOG)
+  add_subdirectory(sql)
+endif()

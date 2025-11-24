@@ -512,6 +512,90 @@ function(resolve_cpr_dependency)
 endfunction()
 
 # ----------------------------------------------------------------------
+# SQL catalog database connectors (sqlpp23)
+#
+# The SQL catalog talks to the database through a semantic `CatalogStore`
+# interface (src/iceberg/catalog/sql/catalog_store.h). The built-in stores are
+# implemented on top of sqlpp23, a header-only, compile-time type-safe SQL
+# library. Each connector is opt-in and pulls in its native client library:
+#
+#   ICEBERG_SQL_SQLITE      -> sqlpp23::sqlite3      (SQLite::SQLite3)
+#   ICEBERG_SQL_POSTGRESQL  -> sqlpp23::postgresql   (PostgreSQL::PostgreSQL)
+#   ICEBERG_SQL_MYSQL       -> sqlpp23::mysql        (MySQL::MySQL)
+#
+# Users who inject their own `CatalogStore` do not need sqlpp23 or any connector.
+
+function(resolve_sql_catalog_dependencies)
+  if(NOT ICEBERG_SQL_SQLITE
+     AND NOT ICEBERG_SQL_POSTGRESQL
+     AND NOT ICEBERG_SQL_MYSQL)
+    message(STATUS "SQL catalog: no built-in connectors enabled")
+    return()
+  endif()
+
+  if(CMAKE_VERSION VERSION_LESS 3.28)
+    message(FATAL_ERROR "Built-in SQL catalog connectors require CMake >= 3.28; disable "
+                        "ICEBERG_SQL_SQLITE, ICEBERG_SQL_POSTGRESQL, and ICEBERG_SQL_MYSQL "
+                        "or use CMake >= 3.28")
+  endif()
+
+  prepare_fetchcontent()
+
+  # sqlpp23 requires C++23 and CMake >= 3.28.
+  set(CMAKE_CXX_STANDARD 23)
+  # Header-only consumption; do not scan for C++20 modules.
+  set(BUILD_WITH_MODULES OFF)
+  # Let sqlpp23 verify and locate the native client libraries for the connectors
+  # we enable, exposing the sqlpp23::<connector> targets.
+  set(BUILD_SQLITE3_CONNECTOR ${ICEBERG_SQL_SQLITE})
+  set(BUILD_POSTGRESQL_CONNECTOR ${ICEBERG_SQL_POSTGRESQL})
+  set(BUILD_MYSQL_CONNECTOR ${ICEBERG_SQL_MYSQL})
+
+  if(DEFINED ENV{ICEBERG_SQLPP23_URL})
+    set(SQLPP23_URL "$ENV{ICEBERG_SQLPP23_URL}")
+  else()
+    set(SQLPP23_URL "https://github.com/rbock/sqlpp23/archive/refs/tags/0.69.tar.gz")
+  endif()
+
+  fetchcontent_declare(sqlpp23
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       URL ${SQLPP23_URL}
+                           FIND_PACKAGE_ARGS
+                           NAMES
+                           Sqlpp23
+                           CONFIG)
+  fetchcontent_makeavailable(sqlpp23)
+
+  # sqlpp23 locates the native client libraries within its own subdirectory
+  # scope. Re-run find_package with GLOBAL so the imported targets are visible
+  # where the SQL catalog library is defined, and record them as downstream
+  # system dependencies for the installed interface.
+  if(ICEBERG_SQL_SQLITE)
+    find_package(SQLite3 REQUIRED GLOBAL)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES SQLite3)
+    message(STATUS "SQL catalog: SQLite connector enabled (sqlpp23::sqlite3)")
+  endif()
+  if(ICEBERG_SQL_POSTGRESQL)
+    find_package(PostgreSQL REQUIRED GLOBAL)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES PostgreSQL)
+    message(STATUS "SQL catalog: PostgreSQL connector enabled (sqlpp23::postgresql)")
+  endif()
+  if(ICEBERG_SQL_MYSQL)
+    # MySQL has no standard CMake module; reuse the one sqlpp23 ships.
+    if(sqlpp23_SOURCE_DIR)
+      list(APPEND CMAKE_MODULE_PATH "${sqlpp23_SOURCE_DIR}/cmake/modules")
+    endif()
+    find_package(MySQL REQUIRED GLOBAL)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES MySQL)
+    message(STATUS "SQL catalog: MySQL connector enabled (sqlpp23::mysql)")
+  endif()
+
+  set(ICEBERG_SYSTEM_DEPENDENCIES
+      ${ICEBERG_SYSTEM_DEPENDENCIES}
+      PARENT_SCOPE)
+endfunction()
+
+# ----------------------------------------------------------------------
 # Zstd
 
 function(resolve_zstd_dependency)
@@ -538,4 +622,8 @@ endif()
 
 if(ICEBERG_BUILD_REST)
   resolve_cpr_dependency()
+endif()
+
+if(ICEBERG_BUILD_SQL_CATALOG)
+  resolve_sql_catalog_dependencies()
 endif()

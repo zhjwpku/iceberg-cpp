@@ -236,6 +236,22 @@ if(ICEBERG_BUILD_BUNDLE)
 
 endif()
 
+if(ICEBERG_BUILD_SQL_CATALOG
+   AND ICEBERG_SQL_SQLITE
+   AND ICEBERG_BUILD_BUNDLE)
+  add_executable(sql_catalog_test)
+  target_include_directories(sql_catalog_test PRIVATE "${CMAKE_BINARY_DIR}/iceberg/test/")
+  target_sources(sql_catalog_test PRIVATE sql_catalog_test.cc)
+  target_link_libraries(sql_catalog_test
+                        PRIVATE iceberg_sql_catalog_static
+                                "$<IF:$<TARGET_EXISTS:iceberg_bundle_static>,iceberg_bundle_static,iceberg_bundle_shared>"
+                                GTest::gmock_main)
+  if(MSVC_TOOLCHAIN)
+    target_compile_options(sql_catalog_test PRIVATE /bigobj)
+  endif()
+  add_test(NAME sql_catalog_test COMMAND sql_catalog_test)
+endif()
+
 if(ICEBERG_BUILD_REST)
   function(add_rest_iceberg_test test_name)
     set(options USE_BUNDLE)
