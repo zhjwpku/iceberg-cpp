@@ -156,6 +156,10 @@ class TableRequirement;
 class TableMetadataBuilder;
 class TableUpdateContext;
 
+class PendingUpdate;
+template <typename T>
+class PendingUpdateTyped;
+
 /// ----------------------------------------------------------------------------
 /// TODO: Forward declarations below are not added yet.
 /// ----------------------------------------------------------------------------
