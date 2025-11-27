@@ -97,6 +97,7 @@ function(resolve_arrow_dependency)
   set(ARROW_WITH_ZLIB ON)
   set(ZLIB_SOURCE "SYSTEM")
   set(ARROW_VERBOSE_THIRDPARTY_BUILD OFF)
+  set(CMAKE_CXX_STANDARD 17)
 
   fetchcontent_declare(VendoredArrow
                        ${FC_DECLARE_COMMON_OPTIONS}
@@ -323,7 +324,7 @@ function(resolve_croaring_dependency)
     set(CROARING_URL "$ENV{ICEBERG_CROARING_URL}")
   else()
     set(CROARING_URL
-        "https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v4.3.11.tar.gz")
+        "https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v4.4.3.tar.gz")
   endif()
 
   fetchcontent_declare(croaring
@@ -542,7 +543,7 @@ function(resolve_cpr_dependency)
             RUNTIME DESTINATION "${ICEBERG_INSTALL_BINDIR}"
             ARCHIVE DESTINATION "${ICEBERG_INSTALL_LIBDIR}"
             LIBRARY DESTINATION "${ICEBERG_INSTALL_LIBDIR}")
-    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES OpenSSL)
+    list(APPEND ICEBERG_SYSTEM_DEPENDENCIES OpenSSL CURL)
   else()
     set(CPR_VENDORED FALSE)
     list(APPEND ICEBERG_SYSTEM_DEPENDENCIES cpr)

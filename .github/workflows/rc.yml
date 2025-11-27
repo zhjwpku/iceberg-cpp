@@ -30,7 +30,7 @@ permissions:
 jobs:
   archive:
     name: Archive
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -77,6 +77,10 @@ jobs:
           - macos-26
           - ubuntu-24.04
           # - windows-latest
+        include:
+          - os: ubuntu-24.04
+            CC: gcc-14
+            CXX: g++-14
     steps:
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -84,6 +88,12 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: archive
+
+      - name: Set Ubuntu Compilers
+        if: ${{ startsWith(matrix.runs-on, 'ubuntu') }}
+        run: |
+          echo "CC=${{ matrix.CC }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.CXX }}" >> $GITHUB_ENV
 
       - name: Verify
         run: |
@@ -109,7 +119,7 @@ jobs:
     if: github.ref_type == 'tag'
     needs:
       - verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
