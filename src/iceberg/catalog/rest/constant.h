@@ -19,40 +19,26 @@
 
 #pragma once
 
-/// \file iceberg/table_identifier.h
-/// A TableIdentifier is a unique identifier for a table
-
 #include <string>
-#include <vector>
 
-#include "iceberg/iceberg_export.h"
-#include "iceberg/result.h"
+#include "iceberg/version.h"
 
-namespace iceberg {
+/// \file iceberg/catalog/rest/constant.h
+/// Constant values for Iceberg REST API.
 
-/// \brief A namespace in a catalog.
-struct ICEBERG_EXPORT Namespace {
-  std::vector<std::string> levels;
+namespace iceberg::rest {
 
-  bool operator==(const Namespace& other) const { return levels == other.levels; }
-};
+inline const std::string kHeaderContentType = "Content-Type";
+inline const std::string kHeaderAccept = "Accept";
+inline const std::string kHeaderXClientVersion = "X-Client-Version";
+inline const std::string kHeaderUserAgent = "User-Agent";
 
-/// \brief Identifies a table in iceberg catalog.
-struct ICEBERG_EXPORT TableIdentifier {
-  Namespace ns;
-  std::string name;
+inline const std::string kMimeTypeApplicationJson = "application/json";
+inline const std::string kMimeTypeFormUrlEncoded = "application/x-www-form-urlencoded";
+inline const std::string kUserAgentPrefix = "iceberg-cpp/";
+inline const std::string kUserAgent = "iceberg-cpp/" ICEBERG_VERSION_STRING;
 
-  bool operator==(const TableIdentifier& other) const {
-    return ns == other.ns && name == other.name;
-  }
+inline const std::string kQueryParamParent = "parent";
+inline const std::string kQueryParamPageToken = "page_token";
 
-  /// \brief Validates the TableIdentifier.
-  Status Validate() const {
-    if (name.empty()) {
-      return Invalid("Invalid table identifier: missing table name");
-    }
-    return {};
-  }
-};
-
-}  // namespace iceberg
+}  // namespace iceberg::rest
