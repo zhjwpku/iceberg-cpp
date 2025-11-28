@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+#include "iceberg/exception.h"
+#include "iceberg/expression/aggregate.h"
 #include "iceberg/expression/literal.h"
 #include "iceberg/expression/predicate.h"
 #include "iceberg/expression/term.h"
@@ -99,6 +101,48 @@ class ICEBERG_EXPORT Expressions {
   /// \brief Create a transform expression.
   static std::shared_ptr<UnboundTransform> Transform(
       std::string name, std::shared_ptr<Transform> transform);
+
+  // Aggregates
+
+  /// \brief Create a COUNT aggregate for a field name.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Count(std::string name);
+
+  /// \brief Create a COUNT aggregate for an unbound term.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Count(
+      std::shared_ptr<UnboundTerm<BoundReference>> expr);
+
+  /// \brief Create a COUNT_NULL aggregate for a field name.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> CountNull(
+      std::string name);
+
+  /// \brief Create a COUNT_NULL aggregate for an unbound term.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> CountNull(
+      std::shared_ptr<UnboundTerm<BoundReference>> expr);
+
+  /// \brief Create a COUNT_NOT_NULL aggregate for a field name.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> CountNotNull(
+      std::string name);
+
+  /// \brief Create a COUNT_NOT_NULL aggregate for an unbound term.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> CountNotNull(
+      std::shared_ptr<UnboundTerm<BoundReference>> expr);
+
+  /// \brief Create a COUNT(*) aggregate.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> CountStar();
+
+  /// \brief Create a MAX aggregate for a field name.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Max(std::string name);
+
+  /// \brief Create a MAX aggregate for an unbound term.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Max(
+      std::shared_ptr<UnboundTerm<BoundReference>> expr);
+
+  /// \brief Create a MIN aggregate for a field name.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Min(std::string name);
+
+  /// \brief Create a MIN aggregate for an unbound term.
+  static std::shared_ptr<UnboundAggregateImpl<BoundReference>> Min(
+      std::shared_ptr<UnboundTerm<BoundReference>> expr);
 
   // Unary predicates
 
