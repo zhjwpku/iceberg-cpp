@@ -85,6 +85,7 @@ add_iceberg_test(table_test
                  table_test.cc
                  table_metadata_builder_test.cc
                  table_requirement_test.cc
+                 table_requirements_test.cc
                  table_update_test.cc)
 
 add_iceberg_test(expression_test
