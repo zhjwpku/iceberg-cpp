@@ -59,6 +59,8 @@ iceberg_tests = {
             'aggregate_test.cc',
             'expression_test.cc',
             'expression_visitor_test.cc',
+            'inclusive_metrics_evaluator_test.cc',
+            'inclusive_metrics_evaluator_with_transform_test.cc',
             'literal_test.cc',
             'predicate_test.cc',
         ),
