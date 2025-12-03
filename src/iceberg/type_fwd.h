@@ -123,6 +123,9 @@ class Uuid;
 class Expression;
 class Literal;
 
+class BoundPredicate;
+class UnboundPredicate;
+
 class DataTableScan;
 class FileScanTask;
 class ScanTask;
