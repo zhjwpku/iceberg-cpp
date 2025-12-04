@@ -27,6 +27,8 @@
 /// for optimistic concurrency control when committing table changes.
 
 #include <memory>
+#include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "iceberg/iceberg_export.h"
@@ -68,27 +70,24 @@ class ICEBERG_EXPORT TableUpdateContext {
   /// \brief Build and return the list of requirements
   Result<std::vector<std::unique_ptr<TableRequirement>>> Build();
 
-  // Getters for deduplication flags
-  bool added_last_assigned_field_id() const { return added_last_assigned_field_id_; }
-  bool added_current_schema_id() const { return added_current_schema_id_; }
-  bool added_last_assigned_partition_id() const {
-    return added_last_assigned_partition_id_;
-  }
-  bool added_default_spec_id() const { return added_default_spec_id_; }
-  bool added_default_sort_order_id() const { return added_default_sort_order_id_; }
+  // Helper methods to deduplicate requirements to add.
+  /// \brief Require that the last assigned field ID remains unchanged
+  void RequireLastAssignedFieldIdUnchanged();
+  /// \brief Require that the current schema ID remains unchanged
+  void RequireCurrentSchemaIdUnchanged();
+  /// \brief Require that the last assigned partition ID remains unchanged
+  void RequireLastAssignedPartitionIdUnchanged();
+  /// \brief Require that the default spec ID remains unchanged
+  void RequireDefaultSpecIdUnchanged();
+  /// \brief Require that the default sort order ID remains unchanged
+  void RequireDefaultSortOrderIdUnchanged();
+  /// \brief Require that no branches have been changed
+  void RequireNoBranchesChanged();
 
-  // Setters for deduplication flags
-  void set_added_last_assigned_field_id(bool value) {
-    added_last_assigned_field_id_ = value;
-  }
-  void set_added_current_schema_id(bool value) { added_current_schema_id_ = value; }
-  void set_added_last_assigned_partition_id(bool value) {
-    added_last_assigned_partition_id_ = value;
-  }
-  void set_added_default_spec_id(bool value) { added_default_spec_id_ = value; }
-  void set_added_default_sort_order_id(bool value) {
-    added_default_sort_order_id_ = value;
-  }
+  /// \brief Track a changed ref and return whether it was newly added
+  /// \param ref_name The name of the ref being changed
+  /// \return true if this is the first time the ref is being changed
+  bool AddChangedRef(const std::string& ref_name);
 
  private:
   const TableMetadata* base_;
@@ -102,6 +101,9 @@ class ICEBERG_EXPORT TableUpdateContext {
   bool added_last_assigned_partition_id_ = false;
   bool added_default_spec_id_ = false;
   bool added_default_sort_order_id_ = false;
+
+  // Track refs that have been changed to avoid duplicate requirements
+  std::unordered_set<std::string> changed_refs_;
 };
 
 /// \brief Factory class for generating table requirements
