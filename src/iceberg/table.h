@@ -82,7 +82,7 @@ class ICEBERG_EXPORT Table {
   sort_orders() const;
 
   /// \brief Return a map of string properties for this table
-  const TableProperties& properties() const;
+  const std::shared_ptr<TableProperties>& properties() const;
 
   /// \brief Return the table's base location
   const std::string& location() const;
@@ -130,7 +130,6 @@ class ICEBERG_EXPORT Table {
   std::string metadata_location_;
   std::shared_ptr<FileIO> io_;
   std::shared_ptr<Catalog> catalog_;
-  std::unique_ptr<TableProperties> properties_;
   std::unique_ptr<class TableMetadataCache> metadata_cache_;
 };
 
