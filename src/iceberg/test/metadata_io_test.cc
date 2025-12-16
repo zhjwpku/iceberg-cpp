@@ -17,16 +17,20 @@
  * under the License.
  */
 
+#include <filesystem>
+
 #include <arrow/filesystem/localfs.h>
 #include <arrow/io/compressed.h>
 #include <arrow/io/file.h>
 #include <arrow/util/compression.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 #include "iceberg/arrow/arrow_fs_file_io_internal.h"
 #include "iceberg/file_io.h"
 #include "iceberg/json_internal.h"
+#include "iceberg/result.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/table_metadata.h"
@@ -42,7 +46,10 @@ class MetadataIOTest : public TempFileTestBase {
     TempFileTestBase::SetUp();
     io_ = std::make_shared<iceberg::arrow::ArrowFileSystemFileIO>(
         std::make_shared<::arrow::fs::LocalFileSystem>());
-    temp_filepath_ = CreateNewTempFilePathWithSuffix(".metadata.json");
+    location_ = CreateTempDirectory();
+    temp_filepath_ = std::format("{}/{}", location_, "metadata/00000-xxx.metadata.json");
+    ASSERT_TRUE(
+        std::filesystem::create_directories(std::format("{}/metadata", location_)));
   }
 
   TableMetadata PrepareMetadata() {
@@ -53,7 +60,7 @@ class MetadataIOTest : public TempFileTestBase {
 
     return TableMetadata{.format_version = 1,
                          .table_uuid = "1234567890",
-                         .location = "s3://bucket/path",
+                         .location = location_,
                          .last_sequence_number = 0,
                          .schemas = {schema},
                          .current_schema_id = 1,
@@ -73,6 +80,7 @@ class MetadataIOTest : public TempFileTestBase {
   }
 
   std::shared_ptr<iceberg::FileIO> io_;
+  std::string location_;
   std::string temp_filepath_;
 };
 
@@ -124,6 +132,76 @@ TEST_F(MetadataIOTest, ReadWriteCompressedMetadata) {
 
   auto metadata_read = std::move(result.value());
   EXPECT_EQ(*metadata_read, metadata);
+}
+
+TEST_F(MetadataIOTest, WriteMetadataWithBase) {
+  TableMetadata base = PrepareMetadata();
+
+  {
+    // Invalid base metadata_file_location, set version to 0
+    TableMetadata new_metadata = PrepareMetadata();
+    ICEBERG_UNWRAP_OR_FAIL(
+        auto new_metadata_location,
+        TableMetadataUtil::Write(*io_, &base, "invalid_location", new_metadata));
+    EXPECT_THAT(new_metadata_location, testing::HasSubstr("/metadata/00000-"));
+  }
+
+  // Reset base metadata_file_location
+  // base.metadata_file_location = temp_filepath_;
+
+  {
+    // Specify write location property
+    TableMetadata new_metadata = PrepareMetadata();
+    new_metadata.properties.Set(TableProperties::kWriteMetadataLocation, location_);
+    ICEBERG_UNWRAP_OR_FAIL(
+        auto new_metadata_location,
+        TableMetadataUtil::Write(*io_, &base, temp_filepath_, new_metadata));
+    EXPECT_THAT(new_metadata_location,
+                testing::HasSubstr(std::format("{}/00001-", location_)));
+  }
+
+  {
+    // Default write location
+    TableMetadata new_metadata = PrepareMetadata();
+    ICEBERG_UNWRAP_OR_FAIL(
+        auto new_metadata_location,
+        TableMetadataUtil::Write(*io_, &base, temp_filepath_, new_metadata));
+    EXPECT_THAT(new_metadata_location,
+                testing::HasSubstr(std::format("{}/metadata/00001-", location_)));
+  }
+}
+
+TEST_F(MetadataIOTest, RemoveDeletedMetadataFiles) {
+  TableMetadata base1 = PrepareMetadata();
+  base1.properties.Set(TableProperties::kMetadataPreviousVersionsMax, 1);
+  ICEBERG_UNWRAP_OR_FAIL(auto base1_metadata_location,
+                         TableMetadataUtil::Write(*io_, nullptr, "", base1));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto base2,
+                         TableMetadataBuilder::BuildFrom(&base1)
+                             ->SetPreviousMetadataLocation(base1_metadata_location)
+                             .Build());
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto base2_metadata_location,
+      TableMetadataUtil::Write(*io_, &base1, base1_metadata_location, *base2));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto new_metadata,
+                         TableMetadataBuilder::BuildFrom(base2.get())
+                             ->SetPreviousMetadataLocation(base2_metadata_location)
+                             .Build());
+  ICEBERG_UNWRAP_OR_FAIL(auto new_metadata_location,
+                         TableMetadataUtil::Write(
+                             *io_, base2.get(), base2_metadata_location, *new_metadata));
+
+  // The first metadata file should not be deleted
+  new_metadata->properties.Set(TableProperties::kMetadataDeleteAfterCommitEnabled, false);
+  TableMetadataUtil::DeleteRemovedMetadataFiles(*io_, base2.get(), *new_metadata);
+  EXPECT_TRUE(std::filesystem::exists(base1_metadata_location));
+
+  // The first metadata file should be deleted
+  new_metadata->properties.Set(TableProperties::kMetadataDeleteAfterCommitEnabled, true);
+  TableMetadataUtil::DeleteRemovedMetadataFiles(*io_, base2.get(), *new_metadata);
+  EXPECT_FALSE(std::filesystem::exists(base1_metadata_location));
 }
 
 }  // namespace iceberg
