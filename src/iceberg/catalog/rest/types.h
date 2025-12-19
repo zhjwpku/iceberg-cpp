@@ -27,6 +27,7 @@
 #include "iceberg/catalog/rest/endpoint.h"
 #include "iceberg/catalog/rest/iceberg_rest_export.h"
 #include "iceberg/result.h"
+#include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
 #include "iceberg/type_fwd.h"
 #include "iceberg/util/macros.h"
@@ -138,6 +139,30 @@ struct ICEBERG_REST_EXPORT RenameTableRequest {
   bool operator==(const RenameTableRequest&) const = default;
 };
 
+/// \brief Request to create a table.
+struct ICEBERG_REST_EXPORT CreateTableRequest {
+  std::string name;  // required
+  std::string location;
+  std::shared_ptr<Schema> schema;  // required
+  std::shared_ptr<PartitionSpec> partition_spec;
+  std::shared_ptr<SortOrder> write_order;
+  bool stage_create = false;
+  std::unordered_map<std::string, std::string> properties;
+
+  /// \brief Validates the CreateTableRequest.
+  Status Validate() const {
+    if (name.empty()) {
+      return Invalid("Missing table name");
+    }
+    if (!schema) {
+      return Invalid("Missing schema");
+    }
+    return {};
+  }
+
+  bool operator==(const CreateTableRequest& other) const;
+};
+
 /// \brief An opaque token that allows clients to make use of pagination for list APIs.
 using PageToken = std::string;
 
@@ -156,7 +181,7 @@ struct ICEBERG_REST_EXPORT LoadTableResult {
     return {};
   }
 
-  bool operator==(const LoadTableResult&) const = default;
+  bool operator==(const LoadTableResult& other) const;
 };
 
 /// \brief Alias of LoadTableResult used as the body of CreateTableResponse
