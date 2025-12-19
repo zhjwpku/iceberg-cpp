@@ -27,6 +27,7 @@
 #include "iceberg/schema.h"
 #include "iceberg/schema_internal.h"
 #include "iceberg/transform.h"
+#include "iceberg/type.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
@@ -42,8 +43,7 @@ class ResidualVisitor : public BoundVisitor<std::shared_ptr<Expression>> {
                                       const StructLike& partition_data,
                                       bool case_sensitive) {
     ICEBERG_ASSIGN_OR_RAISE(auto partition_type, spec.PartitionType(schema));
-    auto partition_schema = FromStructType(std::move(*partition_type), std::nullopt);
-    return ResidualVisitor(spec, schema, std::move(partition_schema), partition_data,
+    return ResidualVisitor(spec, schema, std::move(partition_type), partition_data,
                            case_sensitive);
   }
 
@@ -202,17 +202,17 @@ class ResidualVisitor : public BoundVisitor<std::shared_ptr<Expression>> {
 
  private:
   ResidualVisitor(const PartitionSpec& spec, const Schema& schema,
-                  std::unique_ptr<Schema> partition_schema,
+                  std::unique_ptr<StructType> partition_type,
                   const StructLike& partition_data, bool case_sensitive)
       : spec_(spec),
         schema_(schema),
-        partition_schema_(std::move(partition_schema)),
+        partition_type_(std::move(partition_type)),
         partition_data_(partition_data),
         case_sensitive_(case_sensitive) {}
 
   const PartitionSpec& spec_;
   const Schema& schema_;
-  std::unique_ptr<Schema> partition_schema_;
+  std::unique_ptr<StructType> partition_type_;
   const StructLike& partition_data_;
   bool case_sensitive_;
 };
@@ -235,6 +235,7 @@ Result<std::shared_ptr<Expression>> ResidualVisitor::Predicate(
     // Not associated with a partition field, can't be evaluated
     return pred;
   }
+  auto schema = partition_type_->ToSchema();
 
   for (const auto& part : parts) {
     // Check the strict projection
@@ -243,9 +244,8 @@ Result<std::shared_ptr<Expression>> ResidualVisitor::Predicate(
     std::shared_ptr<Expression> strict_result = nullptr;
 
     if (strict_projection != nullptr) {
-      ICEBERG_ASSIGN_OR_RAISE(
-          auto bound_strict,
-          strict_projection->Bind(*partition_schema_, case_sensitive_));
+      ICEBERG_ASSIGN_OR_RAISE(auto bound_strict,
+                              strict_projection->Bind(*schema, case_sensitive_));
       if (bound_strict->is_bound_predicate()) {
         ICEBERG_ASSIGN_OR_RAISE(
             strict_result, BoundVisitor::Predicate(
@@ -268,9 +268,8 @@ Result<std::shared_ptr<Expression>> ResidualVisitor::Predicate(
     std::shared_ptr<Expression> inclusive_result = nullptr;
 
     if (inclusive_projection != nullptr) {
-      ICEBERG_ASSIGN_OR_RAISE(
-          auto bound_inclusive,
-          inclusive_projection->Bind(*partition_schema_, case_sensitive_));
+      ICEBERG_ASSIGN_OR_RAISE(auto bound_inclusive,
+                              inclusive_projection->Bind(*schema, case_sensitive_));
 
       if (bound_inclusive->is_bound_predicate()) {
         ICEBERG_ASSIGN_OR_RAISE(
