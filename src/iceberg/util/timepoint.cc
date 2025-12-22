@@ -20,6 +20,8 @@
 #include "iceberg/util/timepoint.h"
 
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 
 namespace iceberg {
 
@@ -41,6 +43,24 @@ int64_t UnixNsFromTimePointNs(TimePointNs time_point_ns) {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
              time_point_ns.time_since_epoch())
       .count();
+}
+
+std::string FormatTimestamp(TimePointMs time_point_ns) {
+  // Convert TimePointMs to system_clock::time_point
+  auto unix_ms = UnixMsFromTimePointMs(time_point_ns);
+  auto time_point =
+      std::chrono::system_clock::time_point(std::chrono::milliseconds(unix_ms));
+  auto time_t = std::chrono::system_clock::to_time_t(time_point);
+
+  // Format as ISO 8601-like string: YYYY-MM-DD HH:MM:SS
+  std::ostringstream oss;
+  oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
+
+  // Add milliseconds
+  auto ms = unix_ms % 1000;
+  oss << "." << std::setfill('0') << std::setw(3) << ms << " UTC";
+
+  return oss.str();
 }
 
 }  // namespace iceberg
