@@ -19,13 +19,18 @@
  */
 #include "iceberg/transaction.h"
 
+#include <memory>
+
 #include "iceberg/catalog.h"
 #include "iceberg/table.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_requirements.h"
 #include "iceberg/table_update.h"
+#include "iceberg/update/pending_update.h"
 #include "iceberg/update/update_properties.h"
+#include "iceberg/update/update_sort_order.h"
+#include "iceberg/util/checked_cast.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
@@ -60,9 +65,29 @@ Status Transaction::AddUpdate(const std::shared_ptr<PendingUpdate>& update) {
   return {};
 }
 
-Status Transaction::Apply(std::vector<std::unique_ptr<TableUpdate>> updates) {
-  for (const auto& update : updates) {
-    update->ApplyTo(*metadata_builder_);
+Status Transaction::Apply(PendingUpdate& update) {
+  switch (update.kind()) {
+    case PendingUpdate::Kind::kUpdateProperties: {
+      auto& update_properties = internal::checked_cast<UpdateProperties&>(update);
+      ICEBERG_ASSIGN_OR_RAISE(auto result, update_properties.Apply());
+      if (!result.updates.empty()) {
+        metadata_builder_->SetProperties(std::move(result.updates));
+      }
+      if (!result.removals.empty()) {
+        metadata_builder_->RemoveProperties(std::move(result.removals));
+      }
+      if (result.format_version.has_value()) {
+        metadata_builder_->UpgradeFormatVersion(result.format_version.value());
+      }
+    } break;
+    case PendingUpdate::Kind::kUpdateSortOrder: {
+      auto& update_sort_order = internal::checked_cast<UpdateSortOrder&>(update);
+      ICEBERG_ASSIGN_OR_RAISE(auto result, update_sort_order.Apply());
+      metadata_builder_->SetDefaultSortOrder(result.sort_order);
+    } break;
+    default:
+      return NotSupported("Unsupported pending update: {}",
+                          static_cast<int>(update.kind()));
   }
 
   last_update_committed_ = true;
@@ -117,6 +142,13 @@ Result<std::shared_ptr<UpdateProperties>> Transaction::NewUpdateProperties() {
                           UpdateProperties::Make(shared_from_this()));
   ICEBERG_RETURN_UNEXPECTED(AddUpdate(update_properties));
   return update_properties;
+}
+
+Result<std::shared_ptr<UpdateSortOrder>> Transaction::NewUpdateSortOrder() {
+  ICEBERG_ASSIGN_OR_RAISE(std::shared_ptr<UpdateSortOrder> update_sort_order,
+                          UpdateSortOrder::Make(shared_from_this()));
+  ICEBERG_RETURN_UNEXPECTED(AddUpdate(update_sort_order));
+  return update_sort_order;
 }
 
 }  // namespace iceberg

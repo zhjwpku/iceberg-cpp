@@ -28,7 +28,6 @@
 #include "iceberg/result.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_properties.h"
-#include "iceberg/table_update.h"
 #include "iceberg/transaction.h"
 #include "iceberg/util/error_collector.h"
 #include "iceberg/util/macros.h"
@@ -37,9 +36,8 @@ namespace iceberg {
 
 Result<std::shared_ptr<UpdateProperties>> UpdateProperties::Make(
     std::shared_ptr<Transaction> transaction) {
-  if (!transaction) [[unlikely]] {
-    return InvalidArgument("Cannot create UpdateProperties without a transaction");
-  }
+  ICEBERG_PRECHECK(transaction != nullptr,
+                   "Cannot create UpdateProperties without a transaction");
   return std::shared_ptr<UpdateProperties>(new UpdateProperties(std::move(transaction)));
 }
 
@@ -70,7 +68,7 @@ UpdateProperties& UpdateProperties::Remove(const std::string& key) {
   return *this;
 }
 
-Result<PendingUpdate::ApplyResult> UpdateProperties::Apply() {
+Result<UpdateProperties::ApplyResult> UpdateProperties::Apply() {
   ICEBERG_RETURN_UNEXPECTED(CheckErrors());
   const auto& current_props = transaction_->current().properties.configs();
   std::unordered_map<std::string, std::string> new_properties;
@@ -111,27 +109,8 @@ Result<PendingUpdate::ApplyResult> UpdateProperties::Apply() {
     ICEBERG_RETURN_UNEXPECTED(
         MetricsConfig::VerifyReferencedColumns(new_properties, *schema.value()));
   }
-
-  ApplyResult result;
-  if (!updates_.empty()) {
-    result.updates.emplace_back(std::make_unique<table::SetProperties>(updates_));
-  }
-  if (!removals_.empty()) {
-    for (const auto& key : removals_) {
-      if (current_props.contains(key)) {
-        removals.push_back(key);
-      }
-    }
-    if (!removals.empty()) {
-      result.updates.emplace_back(std::make_unique<table::RemoveProperties>(removals));
-    }
-  }
-  if (format_version_.has_value()) {
-    result.updates.emplace_back(
-        std::make_unique<table::UpgradeFormatVersion>(format_version_.value()));
-  };
-
-  return result;
+  return ApplyResult{
+      .updates = updates_, .removals = removals_, .format_version = format_version_};
 }
 
 }  // namespace iceberg

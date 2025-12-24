@@ -100,6 +100,7 @@ iceberg_sources = files(
     'type.cc',
     'update/pending_update.cc',
     'update/update_properties.cc',
+    'update/update_sort_order.cc',
     'util/bucket_util.cc',
     'util/conversions.cc',
     'util/decimal.cc',

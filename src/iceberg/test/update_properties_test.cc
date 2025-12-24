@@ -19,7 +19,6 @@
 
 #include "iceberg/update/update_properties.h"
 
-#include "iceberg/table_update.h"
 #include "iceberg/test/matchers.h"
 #include "iceberg/test/update_test_base.h"
 
@@ -27,13 +26,21 @@ namespace iceberg {
 
 class UpdatePropertiesTest : public UpdateTestBase {};
 
+TEST_F(UpdatePropertiesTest, EmptyUpdate) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+  EXPECT_THAT(result.updates.empty(), true);
+}
+
 TEST_F(UpdatePropertiesTest, SetProperty) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
   update->Set("key1", "value1").Set("key2", "value2");
 
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
-  EXPECT_EQ(result.updates.size(), 1);
-  EXPECT_EQ(result.updates[0]->kind(), table::SetProperties::Kind::kSetProperties);
+  EXPECT_EQ(result.updates.size(), 2);
+  EXPECT_EQ(result.updates.at("key1"), "value1");
+  EXPECT_EQ(result.updates.at("key2"), "value2");
+  EXPECT_TRUE(result.removals.empty());
 }
 
 TEST_F(UpdatePropertiesTest, RemoveProperty) {
@@ -48,8 +55,10 @@ TEST_F(UpdatePropertiesTest, RemoveProperty) {
   update->Remove("key1").Remove("key2");
 
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
-  EXPECT_EQ(result.updates.size(), 1);
-  EXPECT_EQ(result.updates[0]->kind(), table::RemoveProperties::Kind::kRemoveProperties);
+  EXPECT_TRUE(result.updates.empty());
+  EXPECT_EQ(result.removals.size(), 2);
+  EXPECT_TRUE(result.removals.contains("key1"));
+  EXPECT_TRUE(result.removals.contains("key2"));
 }
 
 TEST_F(UpdatePropertiesTest, SetThenRemoveSameKey) {
@@ -73,22 +82,23 @@ TEST_F(UpdatePropertiesTest, RemoveThenSetSameKey) {
 TEST_F(UpdatePropertiesTest, SetAndRemoveDifferentKeys) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
   update->Set("key1", "value1").Remove("key2");
-  EXPECT_THAT(update->Commit(), IsOk());
 
-  ICEBERG_UNWRAP_OR_FAIL(auto reloaded, catalog_->LoadTable(table_ident_));
-  const auto& props = reloaded->properties().configs();
-  EXPECT_EQ(props.at("key1"), "value1");
-  EXPECT_FALSE(props.contains("key2"));
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+  EXPECT_EQ(result.updates.size(), 1);
+  EXPECT_EQ(result.updates.at("key1"), "value1");
+  EXPECT_EQ(result.removals.size(), 1);
+  EXPECT_TRUE(result.removals.contains("key2"));
 }
 
 TEST_F(UpdatePropertiesTest, UpgradeFormatVersionValid) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
-  update->Set("format-version", "2");
+  update->Set("format-version", "3");
 
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
-  EXPECT_EQ(result.updates.size(), 1);
-  EXPECT_EQ(result.updates[0]->kind(),
-            table::UpgradeFormatVersion::Kind::kUpgradeFormatVersion);
+  EXPECT_TRUE(result.updates.empty());
+  EXPECT_TRUE(result.removals.empty());
+  ASSERT_TRUE(result.format_version.has_value());
+  EXPECT_EQ(result.format_version.value(), 3);
 }
 
 TEST_F(UpdatePropertiesTest, UpgradeFormatVersionInvalidString) {
