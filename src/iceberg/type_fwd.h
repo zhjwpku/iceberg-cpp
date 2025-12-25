@@ -123,8 +123,11 @@ struct TableMetadata;
 
 /// \brief Expression.
 class BoundPredicate;
+class BoundReference;
+class BoundTransform;
 class Expression;
 class Literal;
+class Term;
 class UnboundPredicate;
 
 /// \brief Scan.
@@ -177,6 +180,7 @@ class Transaction;
 
 /// \brief Update family.
 class PendingUpdate;
+class UpdatePartitionSpec;
 class UpdateProperties;
 class UpdateSortOrder;
 
