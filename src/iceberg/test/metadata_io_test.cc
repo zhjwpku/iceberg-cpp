@@ -30,9 +30,11 @@
 #include "iceberg/arrow/arrow_fs_file_io_internal.h"
 #include "iceberg/file_io.h"
 #include "iceberg/json_internal.h"
+#include "iceberg/partition_spec.h"
 #include "iceberg/result.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
+#include "iceberg/sort_order.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_properties.h"
 #include "iceberg/test/matchers.h"
@@ -64,6 +66,7 @@ class MetadataIOTest : public TempFileTestBase {
                          .last_sequence_number = 0,
                          .schemas = {schema},
                          .current_schema_id = 1,
+                         .partition_specs = {PartitionSpec::Unpartitioned()},
                          .default_spec_id = 0,
                          .last_partition_id = 0,
                          .properties = TableProperties::FromMap({{"key", "value"}}),
@@ -75,6 +78,7 @@ class MetadataIOTest : public TempFileTestBase {
                              .manifest_list = "s3://a/b/1.avro",
                              .summary = {{"operation", "append"}},
                          })},
+                         .sort_orders = {SortOrder::Unsorted()},
                          .default_sort_order_id = 0,
                          .next_row_id = 0};
   }

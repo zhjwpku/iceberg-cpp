@@ -46,6 +46,7 @@ namespace iceberg {
 class ICEBERG_EXPORT Schema : public StructType {
  public:
   static constexpr int32_t kInitialSchemaId = 0;
+  static constexpr int32_t kInitialColumnId = 0;
   static constexpr int32_t kInvalidColumnId = -1;
 
   /// \brief Special value to select all columns from manifest files.
@@ -130,6 +131,23 @@ class ICEBERG_EXPORT Schema : public StructType {
   /// \brief Return the canonical field names of the identifier fields.
   Result<std::vector<std::string>> IdentifierFieldNames() const;
 
+  /// \brief Get the highest field ID in the schema.
+  /// \return The highest field ID.
+  Result<int32_t> HighestFieldId() const;
+
+  /// \brief Checks whether this schema is equivalent to another schema while ignoring the
+  /// schema id.
+  bool SameSchema(const Schema& other) const;
+
+  /// \brief Validate the schema for a given format version.
+  ///
+  /// This validates that the schema does not contain types that were released in later
+  /// format versions.
+  ///
+  /// \param format_version The format version to validate against.
+  /// \return Error status if the schema is invalid.
+  Status Validate(int32_t format_version) const;
+
   friend bool operator==(const Schema& lhs, const Schema& rhs) { return lhs.Equals(rhs); }
 
  private:
@@ -158,6 +176,7 @@ class ICEBERG_EXPORT Schema : public StructType {
   InitLowerCaseNameToIdMap(const Schema&);
   static Result<std::unordered_map<int32_t, std::vector<size_t>>> InitIdToPositionPath(
       const Schema&);
+  static Result<int32_t> InitHighestFieldId(const Schema&);
 
   const std::optional<int32_t> schema_id_;
   /// Field IDs that uniquely identify rows in the table.
@@ -170,6 +189,8 @@ class ICEBERG_EXPORT Schema : public StructType {
   Lazy<InitLowerCaseNameToIdMap> lowercase_name_to_id_;
   /// Mapping from field id to (nested) position path to access the field.
   Lazy<InitIdToPositionPath> id_to_position_path_;
+  /// Highest field ID in the schema.
+  Lazy<InitHighestFieldId> highest_field_id_;
 };
 
 }  // namespace iceberg

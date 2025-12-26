@@ -432,7 +432,11 @@ class TableMetadataBuilder::Impl {
   Status RemoveProperties(const std::unordered_set<std::string>& removed);
   Status SetDefaultPartitionSpec(int32_t spec_id);
   Result<int32_t> AddPartitionSpec(const PartitionSpec& spec);
-  std::unique_ptr<TableMetadata> Build();
+  Status SetCurrentSchema(int32_t schema_id);
+  Status RemoveSchemas(const std::unordered_set<int32_t>& schema_ids);
+  Result<int32_t> AddSchema(const Schema& schema, int32_t new_last_column_id);
+
+  Result<std::unique_ptr<TableMetadata>> Build();
 
  private:
   /// \brief Internal method to check for existing sort order and reuse its ID or create a
@@ -446,6 +450,12 @@ class TableMetadataBuilder::Impl {
   /// \param new_spec The partition spec to check
   /// \return The ID to use for this partition spec (reused if exists, new otherwise)
   int32_t ReuseOrCreateNewPartitionSpecId(const PartitionSpec& new_spec);
+
+  /// \brief Internal method to check for existing schema and reuse its ID or create a new
+  /// one
+  /// \param new_schema The schema to check
+  /// \return The ID to use for this schema (reused if exists, new otherwise
+  int32_t ReuseOrCreateNewSchemaId(const Schema& new_schema) const;
 
  private:
   // Base metadata (nullptr for new tables)
@@ -518,7 +528,7 @@ Status TableMetadataBuilder::Impl::UpgradeFormatVersion(int8_t new_format_versio
 }
 
 Status TableMetadataBuilder::Impl::SetDefaultSortOrder(int32_t order_id) {
-  if (order_id == -1) {
+  if (order_id == kLastAdded) {
     if (!last_added_order_id_.has_value()) {
       return InvalidArgument(
           "Cannot set last added sort order: no sort order has been added");
@@ -583,7 +593,7 @@ Result<int32_t> TableMetadataBuilder::Impl::AddSortOrder(const SortOrder& order)
 }
 
 Status TableMetadataBuilder::Impl::SetDefaultPartitionSpec(int32_t spec_id) {
-  if (spec_id == -1) {
+  if (spec_id == kLastAdded) {
     if (!last_added_spec_id_.has_value()) {
       return ValidationFailed(
           "Cannot set last added partition spec: no partition spec has been added");
@@ -632,8 +642,7 @@ Result<int32_t> TableMetadataBuilder::Impl::AddPartitionSpec(const PartitionSpec
 
   ICEBERG_ASSIGN_OR_RAISE(
       std::shared_ptr<PartitionSpec> new_spec,
-      PartitionSpec::Make(new_spec_id, std::vector<PartitionField>(spec.fields().begin(),
-                                                                   spec.fields().end())));
+      PartitionSpec::Make(new_spec_id, spec.fields() | std::ranges::to<std::vector>()));
   metadata_.last_partition_id =
       std::max(metadata_.last_partition_id, new_spec->last_assigned_field_id());
   metadata_.partition_specs.push_back(new_spec);
@@ -681,7 +690,136 @@ Status TableMetadataBuilder::Impl::RemoveProperties(
   return {};
 }
 
-std::unique_ptr<TableMetadata> TableMetadataBuilder::Impl::Build() {
+Status TableMetadataBuilder::Impl::SetCurrentSchema(int32_t schema_id) {
+  if (schema_id == kLastAdded) {
+    if (!last_added_schema_id_.has_value()) {
+      return ValidationFailed("Cannot set last added schema: no schema has been added");
+    }
+    return SetCurrentSchema(last_added_schema_id_.value());
+  }
+
+  if (metadata_.current_schema_id == schema_id) {
+    return {};
+  }
+
+  auto it = schemas_by_id_.find(schema_id);
+  ICEBERG_PRECHECK(it != schemas_by_id_.end(),
+                   "Cannot set current schema to unknown schema: {}", schema_id);
+  const auto& schema = it->second;
+
+  // Rebuild all partition specs for the new current schema
+  std::vector<std::shared_ptr<PartitionSpec>> updated_specs;
+  for (const auto& partition_spec : metadata_.partition_specs) {
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto updated_spec,
+        PartitionSpec::Make(partition_spec->spec_id(),
+                            partition_spec->fields() | std::ranges::to<std::vector>()));
+
+    ICEBERG_RETURN_UNEXPECTED(
+        PartitionSpec::ValidatePartitionName(*schema, *updated_spec));
+
+    updated_specs.push_back(std::move(updated_spec));
+  }
+  metadata_.partition_specs = std::move(updated_specs);
+
+  specs_by_id_.clear();
+  for (const auto& spec : metadata_.partition_specs) {
+    specs_by_id_.emplace(spec->spec_id(), spec);
+  }
+
+  // Rebuild all sort orders for the new current schema
+  std::vector<std::shared_ptr<SortOrder>> updated_orders;
+  for (const auto& sort_order : metadata_.sort_orders) {
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto updated_order,
+        SortOrder::Make(sort_order->order_id(),
+                        sort_order->fields() | std::ranges::to<std::vector>()));
+    updated_orders.push_back(std::move(updated_order));
+  }
+  metadata_.sort_orders = std::move(updated_orders);
+
+  sort_orders_by_id_.clear();
+  for (const auto& order : metadata_.sort_orders) {
+    sort_orders_by_id_.emplace(order->order_id(), order);
+  }
+
+  // Set the current schema ID
+  metadata_.current_schema_id = schema_id;
+
+  // Record the change
+  if (last_added_schema_id_.has_value() && last_added_schema_id_.value() == schema_id) {
+    changes_.push_back(std::make_unique<table::SetCurrentSchema>(kLastAdded));
+  } else {
+    changes_.push_back(std::make_unique<table::SetCurrentSchema>(schema_id));
+  }
+
+  return {};
+}
+
+Status TableMetadataBuilder::Impl::RemoveSchemas(
+    const std::unordered_set<int32_t>& schema_ids) {
+  auto current_schema_id = metadata_.current_schema_id.value_or(Schema::kInitialSchemaId);
+  ICEBERG_PRECHECK(!schema_ids.contains(current_schema_id),
+                   "Cannot remove current schema: {}", current_schema_id);
+
+  if (!schema_ids.empty()) {
+    metadata_.schemas = metadata_.schemas | std::views::filter([&](const auto& schema) {
+                          return schema->schema_id().has_value() &&
+                                 !schema_ids.contains(schema->schema_id().value());
+                        }) |
+                        std::ranges::to<std::vector<std::shared_ptr<Schema>>>();
+    changes_.push_back(std::make_unique<table::RemoveSchemas>(schema_ids));
+  }
+
+  return {};
+}
+
+Result<int32_t> TableMetadataBuilder::Impl::AddSchema(const Schema& schema,
+                                                      int32_t new_last_column_id) {
+  ICEBERG_PRECHECK(new_last_column_id >= metadata_.last_column_id,
+                   "Invalid last column ID: {} < {} (previous last column ID)",
+                   new_last_column_id, metadata_.last_column_id);
+
+  ICEBERG_RETURN_UNEXPECTED(schema.Validate(metadata_.format_version));
+
+  auto new_schema_id = ReuseOrCreateNewSchemaId(schema);
+  auto schema_found = schemas_by_id_.contains(new_schema_id);
+  if (schema_found && new_last_column_id == metadata_.last_column_id) {
+    // update last_added_schema_id if the schema was added in this set of changes (since
+    // it is now the last)
+    bool is_new_schema =
+        last_added_schema_id_.has_value() &&
+        std::ranges::any_of(changes_, [new_schema_id](const auto& change) {
+          if (change->kind() != TableUpdate::Kind::kAddSchema) {
+            return false;
+          }
+          auto* add_schema = internal::checked_cast<table::AddSchema*>(change.get());
+          return add_schema->schema()->schema_id() == std::make_optional(new_schema_id);
+        });
+    last_added_schema_id_ =
+        is_new_schema ? std::make_optional(new_schema_id) : std::nullopt;
+    return new_schema_id;
+  }
+
+  metadata_.last_column_id = new_last_column_id;
+
+  auto new_schema =
+      std::make_shared<Schema>(schema.fields() | std::ranges::to<std::vector>(),
+                               new_schema_id, schema.IdentifierFieldIds());
+
+  if (!schema_found) {
+    metadata_.schemas.push_back(new_schema);
+    schemas_by_id_.emplace(new_schema_id, new_schema);
+  }
+
+  changes_.push_back(std::make_unique<table::AddSchema>(new_schema, new_last_column_id));
+
+  last_added_schema_id_ = new_schema_id;
+
+  return new_schema_id;
+}
+
+Result<std::unique_ptr<TableMetadata>> TableMetadataBuilder::Impl::Build() {
   // 1. Validate metadata consistency through TableMetadata#Validate
 
   // 2. Update last_updated_ms if there are changes
@@ -689,6 +827,27 @@ std::unique_ptr<TableMetadata> TableMetadataBuilder::Impl::Build() {
     metadata_.last_updated_ms =
         TimePointMs{std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())};
+  }
+
+  auto current_schema_id = metadata_.current_schema_id.value_or(Schema::kInitialSchemaId);
+  auto schema_it = schemas_by_id_.find(current_schema_id);
+  ICEBERG_PRECHECK(schema_it != schemas_by_id_.end(),
+                   "Current schema ID {} not found in schemas", current_schema_id);
+  {
+    const auto& current_schema = schema_it->second;
+
+    auto spec_it = specs_by_id_.find(metadata_.default_spec_id);
+    ICEBERG_PRECHECK(spec_it != specs_by_id_.end(),
+                     "Default spec ID {} not found in partition specs",
+                     metadata_.default_spec_id);
+    ICEBERG_RETURN_UNEXPECTED(
+        spec_it->second->Validate(*current_schema, /*allow_missing_fields=*/false));
+
+    auto sort_order_it = sort_orders_by_id_.find(metadata_.default_sort_order_id);
+    ICEBERG_PRECHECK(sort_order_it != sort_orders_by_id_.end(),
+                     "Default sort order ID {} not found in sort orders",
+                     metadata_.default_sort_order_id);
+    ICEBERG_RETURN_UNEXPECTED(sort_order_it->second->Validate(*current_schema));
   }
 
   // 3. Buildup metadata_log from base metadata
@@ -738,6 +897,21 @@ int32_t TableMetadataBuilder::Impl::ReuseOrCreateNewPartitionSpecId(
     }
   }
   return new_spec_id;
+}
+
+int32_t TableMetadataBuilder::Impl::ReuseOrCreateNewSchemaId(
+    const Schema& new_schema) const {
+  // if the schema already exists, use its id; otherwise use the highest id + 1
+  auto new_schema_id = metadata_.current_schema_id.value_or(Schema::kInitialSchemaId);
+  for (auto& schema : metadata_.schemas) {
+    auto schema_id = schema->schema_id().value_or(Schema::kInitialSchemaId);
+    if (schema->SameSchema(new_schema)) {
+      return schema_id;
+    } else if (new_schema_id <= schema_id) {
+      new_schema_id = schema_id + 1;
+    }
+  }
+  return new_schema_id;
 }
 
 TableMetadataBuilder::TableMetadataBuilder(int8_t format_version)
@@ -796,16 +970,23 @@ TableMetadataBuilder& TableMetadataBuilder::UpgradeFormatVersion(
 }
 
 TableMetadataBuilder& TableMetadataBuilder::SetCurrentSchema(
-    std::shared_ptr<Schema> schema, int32_t new_last_column_id) {
-  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+    std::shared_ptr<Schema> const& schema, int32_t new_last_column_id) {
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto schema_id,
+                                   impl_->AddSchema(*schema, new_last_column_id));
+  return SetCurrentSchema(schema_id);
 }
 
 TableMetadataBuilder& TableMetadataBuilder::SetCurrentSchema(int32_t schema_id) {
-  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+  ICEBERG_BUILDER_RETURN_IF_ERROR(impl_->SetCurrentSchema(schema_id));
+  return *this;
 }
 
-TableMetadataBuilder& TableMetadataBuilder::AddSchema(std::shared_ptr<Schema> schema) {
-  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+TableMetadataBuilder& TableMetadataBuilder::AddSchema(
+    std::shared_ptr<Schema> const& schema) {
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto highest_field_id, schema->HighestFieldId());
+  auto new_last_column_id = std::max(impl_->metadata().last_column_id, highest_field_id);
+  ICEBERG_BUILDER_RETURN_IF_ERROR(impl_->AddSchema(*schema, new_last_column_id));
+  return *this;
 }
 
 TableMetadataBuilder& TableMetadataBuilder::SetDefaultPartitionSpec(
@@ -831,8 +1012,9 @@ TableMetadataBuilder& TableMetadataBuilder::RemovePartitionSpecs(
 }
 
 TableMetadataBuilder& TableMetadataBuilder::RemoveSchemas(
-    const std::vector<int32_t>& schema_ids) {
-  throw IcebergError(std::format("{} not implemented", __FUNCTION__));
+    const std::unordered_set<int32_t>& schema_ids) {
+  ICEBERG_BUILDER_RETURN_IF_ERROR(impl_->RemoveSchemas(schema_ids));
+  return *this;
 }
 
 TableMetadataBuilder& TableMetadataBuilder::SetDefaultSortOrder(
