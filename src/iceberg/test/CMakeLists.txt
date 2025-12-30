@@ -166,6 +166,8 @@ if(ICEBERG_BUILD_BUNDLE)
                    update_properties_test.cc
                    update_sort_order_test.cc)
 
+  add_iceberg_test(data_writer_test USE_BUNDLE SOURCES data_writer_test.cc)
+
 endif()
 
 if(ICEBERG_BUILD_REST)
