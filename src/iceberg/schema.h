@@ -52,18 +52,47 @@ class ICEBERG_EXPORT Schema : public StructType {
   /// \brief Special value to select all columns from manifest files.
   static constexpr std::string_view kAllColumns = "*";
 
-  explicit Schema(std::vector<SchemaField> fields, int32_t schema_id = kInitialSchemaId,
-                  std::vector<int32_t> identifier_field_ids = {});
+  explicit Schema(std::vector<SchemaField> fields, int32_t schema_id = kInitialSchemaId);
+
+  /// \brief Create a schema.
+  ///
+  /// \param fields The fields that make up the schema.
+  /// \param schema_id The unique identifier for this schema (default:kInitialSchemaId).
+  /// \param identifier_field_ids Field IDs that uniquely identify rows in the table.
+  /// \return A new Schema instance or Status if failed.
+  static Result<std::unique_ptr<Schema>> Make(std::vector<SchemaField> fields,
+                                              int32_t schema_id,
+                                              std::vector<int32_t> identifier_field_ids);
 
   /// \brief Create a schema.
   ///
   /// \param fields The fields that make up the schema.
   /// \param schema_id The unique identifier for this schema (default: kInitialSchemaId).
   /// \param identifier_field_names Canonical names of fields that uniquely identify rows
-  /// in the table (default: empty). \return A new Schema instance or Status if failed.
+  /// in the table.
+  /// \return A new Schema instance or Status if failed.
   static Result<std::unique_ptr<Schema>> Make(
-      std::vector<SchemaField> fields, int32_t schema_id = kInitialSchemaId,
-      const std::vector<std::string>& identifier_field_names = {});
+      std::vector<SchemaField> fields, int32_t schema_id,
+      const std::vector<std::string>& identifier_field_names);
+
+  /// \brief Validate that the identifier field with the given ID is valid for the schema
+  ///
+  /// This method checks that the specified field ID represents a valid identifier field
+  /// according to Iceberg's identifier field requirements. It verifies that the field:
+  /// - exists in the schema
+  /// - is a primitive type
+  /// - is not optional (required field)
+  /// - is not a float or double type
+  /// - is not nested within optional or non-struct parent fields
+  ///
+  /// \param field_id The ID of the field to validate as an identifier field.
+  /// \param schema The schema containing the field to validate.
+  /// \param id_to_parent A mapping from field IDs to their parent field IDs for nested
+  /// field validation.
+  /// \return Status indicating success or failure of the validation.
+  static Status ValidateIdentifierFields(
+      int32_t field_id, const Schema& schema,
+      const std::unordered_map<int32_t, int32_t>& id_to_parent);
 
   /// \brief Get an empty schema.
   ///
