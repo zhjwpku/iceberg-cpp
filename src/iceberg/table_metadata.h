@@ -127,6 +127,12 @@ struct ICEBERG_EXPORT TableMetadata {
   /// A `long` higher than all assigned row IDs
   int64_t next_row_id;
 
+  static Result<std::unique_ptr<TableMetadata>> Make(
+      const iceberg::Schema& schema, const iceberg::PartitionSpec& spec,
+      const iceberg::SortOrder& sort_order, const std::string& location,
+      const std::unordered_map<std::string, std::string>& properties,
+      int format_version = kDefaultTableFormatVersion);
+
   /// \brief Get the current schema, return NotFoundError if not found
   Result<std::shared_ptr<iceberg::Schema>> Schema() const;
   /// \brief Get the current schema by ID, return NotFoundError if not found
@@ -210,8 +216,15 @@ class ICEBERG_EXPORT TableMetadataBuilder : public ErrorCollector {
   /// \brief Create a builder from existing table metadata
   ///
   /// \param base The base table metadata to build from
-  /// \return A new TableMetadataBuilder instance initialized with base metadata
+  /// \return A new TableMetadataBuilder instance initialized
+  /// with base metadata
   static std::unique_ptr<TableMetadataBuilder> BuildFrom(const TableMetadata* base);
+
+  /// \brief Apply changes required to create this table metadata
+  ///
+  /// \param base The table metadata to build from
+  /// \return Reference to this builder for method chaining
+  TableMetadataBuilder& ApplyChangesForCreate(const TableMetadata& base);
 
   /// \brief Set the metadata location of the table
   ///
