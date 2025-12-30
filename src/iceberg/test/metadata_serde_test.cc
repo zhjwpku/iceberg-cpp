@@ -96,8 +96,7 @@ TEST(MetadataSerdeTest, DeserializeV1Valid) {
   auto expected_schema = std::make_shared<Schema>(
       std::vector<SchemaField>{SchemaField::MakeRequired(1, "x", int64()),
                                SchemaField::MakeRequired(2, "y", int64()),
-                               SchemaField::MakeRequired(3, "z", int64())},
-      /*schema_id=*/std::nullopt);
+                               SchemaField::MakeRequired(3, "z", int64())});
 
   auto expected_spec_result = PartitionSpec::Make(
       /*spec_id=*/0,
@@ -115,7 +114,7 @@ TEST(MetadataSerdeTest, DeserializeV1Valid) {
       .last_updated_ms = TimePointMsFromUnixMs(1602638573874).value(),
       .last_column_id = 3,
       .schemas = {expected_schema},
-      .current_schema_id = std::nullopt,
+      .current_schema_id = Schema::kInitialSchemaId,
       .partition_specs = {expected_spec},
       .default_spec_id = 0,
       .last_partition_id = 1000,
