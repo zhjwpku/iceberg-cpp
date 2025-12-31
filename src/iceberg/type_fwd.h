@@ -190,6 +190,7 @@ class Transaction;
 class PendingUpdate;
 class UpdatePartitionSpec;
 class UpdateProperties;
+class UpdateSchema;
 class UpdateSortOrder;
 
 /// ----------------------------------------------------------------------------
