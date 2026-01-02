@@ -108,6 +108,8 @@ class ICEBERG_REST_EXPORT RestCatalog : public Catalog,
               std::shared_ptr<FileIO> file_io, std::unique_ptr<ResourcePaths> paths,
               std::unordered_set<Endpoint> endpoints);
 
+  Result<std::string> LoadTableInternal(const TableIdentifier& identifier) const;
+
   std::unique_ptr<RestCatalogProperties> config_;
   std::shared_ptr<FileIO> file_io_;
   std::unique_ptr<HttpClient> client_;
