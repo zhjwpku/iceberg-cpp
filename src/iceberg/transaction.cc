@@ -25,6 +25,7 @@
 #include "iceberg/schema.h"
 #include "iceberg/table.h"
 #include "iceberg/table_metadata.h"
+#include "iceberg/table_properties.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_requirements.h"
 #include "iceberg/table_update.h"
@@ -35,6 +36,7 @@
 #include "iceberg/update/update_schema.h"
 #include "iceberg/update/update_sort_order.h"
 #include "iceberg/util/checked_cast.h"
+#include "iceberg/util/location_util.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
@@ -69,6 +71,16 @@ Result<std::shared_ptr<Transaction>> Transaction::Make(std::shared_ptr<Table> ta
 const TableMetadata* Transaction::base() const { return metadata_builder_->base(); }
 
 const TableMetadata& Transaction::current() const { return metadata_builder_->current(); }
+
+std::string Transaction::MetadataFileLocation(std::string_view filename) const {
+  const auto metadata_location =
+      current().properties.Get(TableProperties::kWriteMetadataLocation);
+  if (metadata_location.empty()) {
+    return std::format("{}/{}", LocationUtil::StripTrailingSlash(metadata_location),
+                       filename);
+  }
+  return std::format("{}/metadata/{}", current().location, filename);
+}
 
 Status Transaction::AddUpdate(const std::shared_ptr<PendingUpdate>& update) {
   if (!last_update_committed_) {
@@ -178,10 +190,7 @@ Result<std::shared_ptr<Table>> Transaction::Commit() {
 
   for (const auto& update : pending_updates_) {
     if (auto update_ptr = update.lock()) {
-      if (auto snapshot_update =
-              internal::checked_cast<SnapshotUpdate*>(update_ptr.get())) {
-        std::ignore = snapshot_update->Finalize();
-      }
+      ICEBERG_RETURN_UNEXPECTED(update_ptr->Finalize());
     }
   }
 
