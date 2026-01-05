@@ -59,7 +59,7 @@ struct DecodeContext {
 /// \param metadata_context The metadata column context for populating them
 /// \param array_builder The Arrow array builder to append decoded data to
 /// \param ctx Decode context for reusing scratch buffers
-/// \return Status::OK if successful, or an error status
+/// \return Status indicating success, or an error status
 Status DecodeAvroToBuilder(const ::avro::NodePtr& avro_node, ::avro::Decoder& decoder,
                            const SchemaProjection& projection,
                            const Schema& projected_schema,
