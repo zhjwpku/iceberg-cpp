@@ -31,6 +31,8 @@
 #include "iceberg/partition_spec.h"
 #include "iceberg/sort_order.h"
 #include "iceberg/table_identifier.h"
+#include "iceberg/table_requirement.h"
+#include "iceberg/table_update.h"
 #include "iceberg/util/json_util_internal.h"
 #include "iceberg/util/macros.h"
 
@@ -69,6 +71,8 @@ constexpr std::string_view kType = "type";
 constexpr std::string_view kCode = "code";
 constexpr std::string_view kStack = "stack";
 constexpr std::string_view kError = "error";
+constexpr std::string_view kIdentifier = "identifier";
+constexpr std::string_view kRequirements = "requirements";
 
 }  // namespace
 
@@ -390,6 +394,75 @@ Result<CreateTableRequest> CreateTableRequestFromJson(const nlohmann::json& json
   return request;
 }
 
+// CommitTableRequest serialization
+nlohmann::json ToJson(const CommitTableRequest& request) {
+  nlohmann::json json;
+  if (!request.identifier.name.empty()) {
+    json[kIdentifier] = ToJson(request.identifier);
+  }
+
+  nlohmann::json requirements_json = nlohmann::json::array();
+  for (const auto& req : request.requirements) {
+    requirements_json.push_back(ToJson(*req));
+  }
+  json[kRequirements] = std::move(requirements_json);
+
+  nlohmann::json updates_json = nlohmann::json::array();
+  for (const auto& update : request.updates) {
+    updates_json.push_back(ToJson(*update));
+  }
+  json[kUpdates] = std::move(updates_json);
+
+  return json;
+}
+
+Result<CommitTableRequest> CommitTableRequestFromJson(const nlohmann::json& json) {
+  CommitTableRequest request;
+  if (json.contains(kIdentifier)) {
+    ICEBERG_ASSIGN_OR_RAISE(auto identifier_json,
+                            GetJsonValue<nlohmann::json>(json, kIdentifier));
+    ICEBERG_ASSIGN_OR_RAISE(request.identifier, TableIdentifierFromJson(identifier_json));
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto requirements_json,
+                          GetJsonValue<nlohmann::json>(json, kRequirements));
+  for (const auto& req_json : requirements_json) {
+    ICEBERG_ASSIGN_OR_RAISE(auto requirement, TableRequirementFromJson(req_json));
+    request.requirements.push_back(std::move(requirement));
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto updates_json,
+                          GetJsonValue<nlohmann::json>(json, kUpdates));
+  for (const auto& update_json : updates_json) {
+    ICEBERG_ASSIGN_OR_RAISE(auto update, TableUpdateFromJson(update_json));
+    request.updates.push_back(std::move(update));
+  }
+
+  ICEBERG_RETURN_UNEXPECTED(request.Validate());
+  return request;
+}
+
+// CommitTableResponse serialization
+nlohmann::json ToJson(const CommitTableResponse& response) {
+  nlohmann::json json;
+  json[kMetadataLocation] = response.metadata_location;
+  if (response.metadata) {
+    json[kMetadata] = ToJson(*response.metadata);
+  }
+  return json;
+}
+
+Result<CommitTableResponse> CommitTableResponseFromJson(const nlohmann::json& json) {
+  CommitTableResponse response;
+  ICEBERG_ASSIGN_OR_RAISE(response.metadata_location,
+                          GetJsonValue<std::string>(json, kMetadataLocation));
+  ICEBERG_ASSIGN_OR_RAISE(auto metadata_json,
+                          GetJsonValue<nlohmann::json>(json, kMetadata));
+  ICEBERG_ASSIGN_OR_RAISE(response.metadata, TableMetadataFromJson(metadata_json));
+  ICEBERG_RETURN_UNEXPECTED(response.Validate());
+  return response;
+}
+
 #define ICEBERG_DEFINE_FROM_JSON(Model)                       \
   template <>                                                 \
   Result<Model> FromJson<Model>(const nlohmann::json& json) { \
@@ -409,5 +482,7 @@ ICEBERG_DEFINE_FROM_JSON(LoadTableResult)
 ICEBERG_DEFINE_FROM_JSON(RegisterTableRequest)
 ICEBERG_DEFINE_FROM_JSON(RenameTableRequest)
 ICEBERG_DEFINE_FROM_JSON(CreateTableRequest)
+ICEBERG_DEFINE_FROM_JSON(CommitTableRequest)
+ICEBERG_DEFINE_FROM_JSON(CommitTableResponse)
 
 }  // namespace iceberg::rest

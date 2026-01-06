@@ -31,6 +31,8 @@
 #include "iceberg/snapshot.h"
 #include "iceberg/sort_field.h"
 #include "iceberg/sort_order.h"
+#include "iceberg/table_requirement.h"
+#include "iceberg/table_update.h"
 #include "iceberg/test/matchers.h"
 #include "iceberg/transform.h"
 #include "iceberg/util/formatter.h"  // IWYU pragma: keep
@@ -291,6 +293,342 @@ TEST(JsonInternalTest, NameMapping) {
       ])"_json;
 
   TestJsonConversion(*mapping, expected_json);
+}
+
+// TableUpdate JSON Serialization/Deserialization Tests
+TEST(JsonInternalTest, TableUpdateAssignUUID) {
+  table::AssignUUID update("550e8400-e29b-41d4-a716-446655440000");
+  nlohmann::json expected =
+      R"({"action":"assign-uuid","uuid":"550e8400-e29b-41d4-a716-446655440000"})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssignUUID*>(parsed.value().get()), update);
+}
+
+TEST(JsonInternalTest, TableUpdateUpgradeFormatVersion) {
+  table::UpgradeFormatVersion update(2);
+  nlohmann::json expected =
+      R"({"action":"upgrade-format-version","format-version":2})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::UpgradeFormatVersion*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateAddSchema) {
+  auto schema = std::make_shared<Schema>(
+      std::vector<SchemaField>{SchemaField(1, "id", int64(), false),
+                               SchemaField(2, "name", string(), true)},
+      /*schema_id=*/1);
+  table::AddSchema update(schema, 2);
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "add-schema");
+  EXPECT_EQ(json["last-column-id"], 2);
+  EXPECT_TRUE(json.contains("schema"));
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  auto* actual = internal::checked_cast<table::AddSchema*>(parsed.value().get());
+  EXPECT_EQ(actual->last_column_id(), update.last_column_id());
+  EXPECT_EQ(*actual->schema(), *update.schema());
+}
+
+TEST(JsonInternalTest, TableUpdateSetCurrentSchema) {
+  table::SetCurrentSchema update(1);
+  nlohmann::json expected = R"({"action":"set-current-schema","schema-id":1})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetCurrentSchema*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetDefaultPartitionSpec) {
+  table::SetDefaultPartitionSpec update(2);
+  nlohmann::json expected = R"({"action":"set-default-spec","spec-id":2})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(
+      *internal::checked_cast<table::SetDefaultPartitionSpec*>(parsed.value().get()),
+      update);
+}
+
+TEST(JsonInternalTest, TableUpdateRemovePartitionSpecs) {
+  table::RemovePartitionSpecs update({1, 2, 3});
+  nlohmann::json expected =
+      R"({"action":"remove-partition-specs","spec-ids":[1,2,3]})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::RemovePartitionSpecs*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateRemoveSchemas) {
+  table::RemoveSchemas update({1, 2});
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "remove-schemas");
+  EXPECT_THAT(json["schema-ids"].get<std::vector<int32_t>>(),
+              testing::UnorderedElementsAre(1, 2));
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::RemoveSchemas*>(parsed.value().get()), update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetDefaultSortOrder) {
+  table::SetDefaultSortOrder update(1);
+  nlohmann::json expected =
+      R"({"action":"set-default-sort-order","sort-order-id":1})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetDefaultSortOrder*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateAddSnapshot) {
+  auto snapshot = std::make_shared<Snapshot>(
+      Snapshot{.snapshot_id = 123456789,
+               .parent_snapshot_id = 987654321,
+               .sequence_number = 5,
+               .timestamp_ms = TimePointMsFromUnixMs(1234567890000).value(),
+               .manifest_list = "/path/to/manifest-list.avro",
+               .summary = {{SnapshotSummaryFields::kOperation, DataOperation::kAppend}},
+               .schema_id = 1});
+  table::AddSnapshot update(snapshot);
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "add-snapshot");
+  EXPECT_TRUE(json.contains("snapshot"));
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  auto* actual = internal::checked_cast<table::AddSnapshot*>(parsed.value().get());
+  EXPECT_EQ(*actual->snapshot(), *update.snapshot());
+}
+
+TEST(JsonInternalTest, TableUpdateRemoveSnapshots) {
+  table::RemoveSnapshots update({111, 222, 333});
+  nlohmann::json expected =
+      R"({"action":"remove-snapshots","snapshot-ids":[111,222,333]})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::RemoveSnapshots*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateRemoveSnapshotRef) {
+  table::RemoveSnapshotRef update("my-branch");
+  nlohmann::json expected =
+      R"({"action":"remove-snapshot-ref","ref-name":"my-branch"})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::RemoveSnapshotRef*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetSnapshotRefBranch) {
+  table::SetSnapshotRef update("main", 123456789, SnapshotRefType::kBranch, 5, 86400000,
+                               604800000);
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "set-snapshot-ref");
+  EXPECT_EQ(json["ref-name"], "main");
+  EXPECT_EQ(json["snapshot-id"], 123456789);
+  EXPECT_EQ(json["type"], "branch");
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetSnapshotRef*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetSnapshotRefTag) {
+  table::SetSnapshotRef update("release-1.0", 987654321, SnapshotRefType::kTag);
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "set-snapshot-ref");
+  EXPECT_EQ(json["type"], "tag");
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetSnapshotRef*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetProperties) {
+  table::SetProperties update({{"key1", "value1"}, {"key2", "value2"}});
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "set-properties");
+  EXPECT_TRUE(json.contains("updates"));
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetProperties*>(parsed.value().get()), update);
+}
+
+TEST(JsonInternalTest, TableUpdateRemoveProperties) {
+  table::RemoveProperties update({"key1", "key2"});
+
+  auto json = ToJson(update);
+  EXPECT_EQ(json["action"], "remove-properties");
+  EXPECT_TRUE(json.contains("removals"));
+
+  auto parsed = TableUpdateFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::RemoveProperties*>(parsed.value().get()),
+            update);
+}
+
+TEST(JsonInternalTest, TableUpdateSetLocation) {
+  table::SetLocation update("s3://bucket/warehouse/table");
+  nlohmann::json expected =
+      R"({"action":"set-location","location":"s3://bucket/warehouse/table"})"_json;
+
+  EXPECT_EQ(ToJson(update), expected);
+  auto parsed = TableUpdateFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::SetLocation*>(parsed.value().get()), update);
+}
+
+TEST(JsonInternalTest, TableUpdateUnknownAction) {
+  nlohmann::json json = R"({"action":"unknown-action"})"_json;
+  auto result = TableUpdateFromJson(json);
+  EXPECT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, HasErrorMessage("Unknown table update action"));
+}
+
+// TableRequirement JSON Serialization/Deserialization Tests
+TEST(TableRequirementJsonTest, TableRequirementAssertDoesNotExist) {
+  table::AssertDoesNotExist req;
+  nlohmann::json expected = R"({"type":"assert-create"})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(parsed.value()->kind(), TableRequirement::Kind::kAssertDoesNotExist);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertUUID) {
+  table::AssertUUID req("550e8400-e29b-41d4-a716-446655440000");
+  nlohmann::json expected =
+      R"({"type":"assert-table-uuid","uuid":"550e8400-e29b-41d4-a716-446655440000"})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertUUID*>(parsed.value().get()), req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertRefSnapshotID) {
+  table::AssertRefSnapshotID req("main", 123456789);
+  nlohmann::json expected =
+      R"({"type":"assert-ref-snapshot-id","ref-name":"main","snapshot-id":123456789})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertRefSnapshotID*>(parsed.value().get()),
+            req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertRefSnapshotIDWithNull) {
+  table::AssertRefSnapshotID req("main", std::nullopt);
+  nlohmann::json expected =
+      R"({"type":"assert-ref-snapshot-id","ref-name":"main","snapshot-id":null})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertRefSnapshotID*>(parsed.value().get()),
+            req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertLastAssignedFieldId) {
+  table::AssertLastAssignedFieldId req(100);
+  nlohmann::json expected =
+      R"({"type":"assert-last-assigned-field-id","last-assigned-field-id":100})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(
+      *internal::checked_cast<table::AssertLastAssignedFieldId*>(parsed.value().get()),
+      req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertCurrentSchemaID) {
+  table::AssertCurrentSchemaID req(1);
+  nlohmann::json expected =
+      R"({"type":"assert-current-schema-id","current-schema-id":1})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertCurrentSchemaID*>(parsed.value().get()),
+            req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertLastAssignedPartitionId) {
+  table::AssertLastAssignedPartitionId req(1000);
+  nlohmann::json expected =
+      R"({"type":"assert-last-assigned-partition-id","last-assigned-partition-id":1000})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertLastAssignedPartitionId*>(
+                parsed.value().get()),
+            req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertDefaultSpecID) {
+  table::AssertDefaultSpecID req(0);
+  nlohmann::json expected =
+      R"({"type":"assert-default-spec-id","default-spec-id":0})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(*internal::checked_cast<table::AssertDefaultSpecID*>(parsed.value().get()),
+            req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementAssertDefaultSortOrderID) {
+  table::AssertDefaultSortOrderID req(0);
+  nlohmann::json expected =
+      R"({"type":"assert-default-sort-order-id","default-sort-order-id":0})"_json;
+
+  EXPECT_EQ(ToJson(req), expected);
+  auto parsed = TableRequirementFromJson(expected);
+  ASSERT_THAT(parsed, IsOk());
+  EXPECT_EQ(
+      *internal::checked_cast<table::AssertDefaultSortOrderID*>(parsed.value().get()),
+      req);
+}
+
+TEST(TableRequirementJsonTest, TableRequirementUnknownType) {
+  nlohmann::json json = R"({"type":"unknown-type"})"_json;
+  auto result = TableRequirementFromJson(json);
+  EXPECT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, HasErrorMessage("Unknown table requirement type"));
 }
 
 }  // namespace iceberg

@@ -23,6 +23,8 @@
 #include "iceberg/schema.h"
 #include "iceberg/sort_order.h"
 #include "iceberg/table_metadata.h"
+#include "iceberg/table_requirement.h"
+#include "iceberg/table_update.h"
 
 namespace iceberg::rest {
 
@@ -60,6 +62,51 @@ bool LoadTableResult::operator==(const LoadTableResult& other) const {
     return false;
   }
 
+  if (!metadata != !other.metadata) {
+    return false;
+  }
+  if (metadata && *metadata != *other.metadata) {
+    return false;
+  }
+  return true;
+}
+
+bool CommitTableRequest::operator==(const CommitTableRequest& other) const {
+  if (identifier != other.identifier) {
+    return false;
+  }
+  if (requirements.size() != other.requirements.size()) {
+    return false;
+  }
+  if (updates.size() != other.updates.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < requirements.size(); ++i) {
+    if (!requirements[i] != !other.requirements[i]) {
+      return false;
+    }
+    if (requirements[i] && !requirements[i]->Equals(*other.requirements[i])) {
+      return false;
+    }
+  }
+
+  for (size_t i = 0; i < updates.size(); ++i) {
+    if (!updates[i] != !other.updates[i]) {
+      return false;
+    }
+    if (updates[i] && !updates[i]->Equals(*other.updates[i])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool CommitTableResponse::operator==(const CommitTableResponse& other) const {
+  if (metadata_location != other.metadata_location) {
+    return false;
+  }
   if (!metadata != !other.metadata) {
     return false;
   }

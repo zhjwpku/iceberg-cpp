@@ -42,6 +42,8 @@
 #include "iceberg/schema.h"
 #include "iceberg/sort_order.h"
 #include "iceberg/table.h"
+#include "iceberg/table_requirement.h"
+#include "iceberg/table_update.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg::rest {
@@ -177,7 +179,7 @@ Result<std::vector<Namespace>> RestCatalog::ListNamespaces(const Namespace& ns) 
     if (list_response.next_page_token.empty()) {
       return result;
     }
-    next_token = list_response.next_page_token;
+    next_token = std::move(list_response.next_page_token);
   }
   return result;
 }
@@ -246,9 +248,30 @@ Status RestCatalog::UpdateNamespaceProperties(
   return {};
 }
 
-Result<std::vector<TableIdentifier>> RestCatalog::ListTables(
-    [[maybe_unused]] const Namespace& ns) const {
-  return NotImplemented("Not implemented");
+Result<std::vector<TableIdentifier>> RestCatalog::ListTables(const Namespace& ns) const {
+  ICEBERG_ENDPOINT_CHECK(supported_endpoints_, Endpoint::ListTables());
+
+  ICEBERG_ASSIGN_OR_RAISE(auto path, paths_->Tables(ns));
+  std::vector<TableIdentifier> result;
+  std::string next_token;
+  while (true) {
+    std::unordered_map<std::string, std::string> params;
+    if (!next_token.empty()) {
+      params[kQueryParamPageToken] = next_token;
+    }
+    ICEBERG_ASSIGN_OR_RAISE(
+        const auto response,
+        client_->Get(path, params, /*headers=*/{}, *TableErrorHandler::Instance()));
+    ICEBERG_ASSIGN_OR_RAISE(auto json, FromJsonString(response.body()));
+    ICEBERG_ASSIGN_OR_RAISE(auto list_response, ListTablesResponseFromJson(json));
+    result.insert(result.end(), list_response.identifiers.begin(),
+                  list_response.identifiers.end());
+    if (list_response.next_page_token.empty()) {
+      return result;
+    }
+    next_token = std::move(list_response.next_page_token);
+  }
+  return result;
 }
 
 Result<std::shared_ptr<Table>> RestCatalog::CreateTable(
@@ -282,10 +305,33 @@ Result<std::shared_ptr<Table>> RestCatalog::CreateTable(
 }
 
 Result<std::shared_ptr<Table>> RestCatalog::UpdateTable(
-    [[maybe_unused]] const TableIdentifier& identifier,
-    [[maybe_unused]] const std::vector<std::unique_ptr<TableRequirement>>& requirements,
-    [[maybe_unused]] const std::vector<std::unique_ptr<TableUpdate>>& updates) {
-  return NotImplemented("Not implemented");
+    const TableIdentifier& identifier,
+    const std::vector<std::unique_ptr<TableRequirement>>& requirements,
+    const std::vector<std::unique_ptr<TableUpdate>>& updates) {
+  ICEBERG_ENDPOINT_CHECK(supported_endpoints_, Endpoint::UpdateTable());
+  ICEBERG_ASSIGN_OR_RAISE(auto path, paths_->Table(identifier));
+
+  CommitTableRequest request{.identifier = identifier};
+  request.requirements.reserve(requirements.size());
+  for (const auto& req : requirements) {
+    request.requirements.push_back(req->Clone());
+  }
+  request.updates.reserve(updates.size());
+  for (const auto& update : updates) {
+    request.updates.push_back(update->Clone());
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto json_request, ToJsonString(ToJson(request)));
+  ICEBERG_ASSIGN_OR_RAISE(
+      const auto response,
+      client_->Post(path, json_request, /*headers=*/{}, *TableErrorHandler::Instance()));
+
+  ICEBERG_ASSIGN_OR_RAISE(auto json, FromJsonString(response.body()));
+  ICEBERG_ASSIGN_OR_RAISE(auto commit_response, CommitTableResponseFromJson(json));
+
+  return Table::Make(identifier, std::move(commit_response.metadata),
+                     std::move(commit_response.metadata_location), file_io_,
+                     shared_from_this());
 }
 
 Result<std::shared_ptr<Transaction>> RestCatalog::StageCreateTable(
@@ -323,9 +369,17 @@ Result<bool> RestCatalog::TableExists(const TableIdentifier& identifier) const {
       client_->Head(path, /*headers=*/{}, *TableErrorHandler::Instance()));
 }
 
-Status RestCatalog::RenameTable([[maybe_unused]] const TableIdentifier& from,
-                                [[maybe_unused]] const TableIdentifier& to) {
-  return NotImplemented("Not implemented");
+Status RestCatalog::RenameTable(const TableIdentifier& from, const TableIdentifier& to) {
+  ICEBERG_ENDPOINT_CHECK(supported_endpoints_, Endpoint::RenameTable());
+  ICEBERG_ASSIGN_OR_RAISE(auto path, paths_->Rename());
+
+  RenameTableRequest request{.source = from, .destination = to};
+  ICEBERG_ASSIGN_OR_RAISE(auto json_request, ToJsonString(ToJson(request)));
+  ICEBERG_ASSIGN_OR_RAISE(
+      const auto response,
+      client_->Post(path, json_request, /*headers=*/{}, *TableErrorHandler::Instance()));
+
+  return {};
 }
 
 Result<std::string> RestCatalog::LoadTableInternal(
@@ -352,9 +406,25 @@ Result<std::shared_ptr<Table>> RestCatalog::LoadTable(const TableIdentifier& ide
 }
 
 Result<std::shared_ptr<Table>> RestCatalog::RegisterTable(
-    [[maybe_unused]] const TableIdentifier& identifier,
-    [[maybe_unused]] const std::string& metadata_file_location) {
-  return NotImplemented("Not implemented");
+    const TableIdentifier& identifier, const std::string& metadata_file_location) {
+  ICEBERG_ENDPOINT_CHECK(supported_endpoints_, Endpoint::RegisterTable());
+  ICEBERG_ASSIGN_OR_RAISE(auto path, paths_->Register(identifier.ns));
+
+  RegisterTableRequest request{
+      .name = identifier.name,
+      .metadata_location = metadata_file_location,
+  };
+
+  ICEBERG_ASSIGN_OR_RAISE(auto json_request, ToJsonString(ToJson(request)));
+  ICEBERG_ASSIGN_OR_RAISE(
+      const auto response,
+      client_->Post(path, json_request, /*headers=*/{}, *TableErrorHandler::Instance()));
+
+  ICEBERG_ASSIGN_OR_RAISE(auto json, FromJsonString(response.body()));
+  ICEBERG_ASSIGN_OR_RAISE(auto load_result, LoadTableResultFromJson(json));
+  return Table::Make(identifier, std::move(load_result.metadata),
+                     std::move(load_result.metadata_location), file_io_,
+                     shared_from_this());
 }
 
 }  // namespace iceberg::rest
