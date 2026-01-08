@@ -194,6 +194,7 @@ class UpdateProperties;
 class UpdateSchema;
 class UpdateSortOrder;
 class ExpireSnapshots;
+class UpdateSnapshotReference;
 
 /// ----------------------------------------------------------------------------
 /// TODO: Forward declarations below are not added yet.
