@@ -56,7 +56,7 @@ class ICEBERG_EXPORT Table : public std::enable_shared_from_this<Table> {
   /// \brief Returns the UUID of the table
   const std::string& uuid() const;
 
-  /// \brief Return the schema for this table, return NotFoundError if not found
+  /// \brief Returns the schema for this table, return NotFoundError if not found
   Result<std::shared_ptr<Schema>> schema() const;
 
   /// \brief Returns a map of schema for this table
@@ -115,6 +115,9 @@ class ICEBERG_EXPORT Table : public std::enable_shared_from_this<Table> {
 
   /// \brief Returns the catalog that this table belongs to
   const std::shared_ptr<Catalog>& catalog() const;
+
+  /// \brief Returns a LocationProvider for this table
+  Result<std::unique_ptr<LocationProvider>> location_provider() const;
 
   /// \brief Refresh the current table metadata
   virtual Status Refresh();
