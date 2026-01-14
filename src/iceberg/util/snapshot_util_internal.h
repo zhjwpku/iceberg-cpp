@@ -44,6 +44,15 @@ class ICEBERG_EXPORT SnapshotUtil {
   static Result<std::vector<std::shared_ptr<Snapshot>>> AncestorsOf(const Table& table,
                                                                     int64_t snapshot_id);
 
+  /// \brief Returns a vector of ancestors of the given snapshot.
+  ///
+  /// \param snapshot_id The snapshot ID to start from
+  /// \param lookup A function to look up snapshots by ID
+  /// \return A vector of ancestor snapshots
+  static Result<std::vector<std::shared_ptr<Snapshot>>> AncestorsOf(
+      int64_t snapshot_id,
+      const std::function<Result<std::shared_ptr<Snapshot>>(int64_t)>& lookup);
+
   /// \brief Returns whether ancestor_snapshot_id is an ancestor of snapshot_id.
   ///
   /// \param table The table to check

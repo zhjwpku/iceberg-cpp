@@ -46,6 +46,14 @@ Result<std::vector<std::shared_ptr<Snapshot>>> SnapshotUtil::AncestorsOf(
   });
 }
 
+Result<std::vector<std::shared_ptr<Snapshot>>> SnapshotUtil::AncestorsOf(
+    int64_t snapshot_id,
+    const std::function<Result<std::shared_ptr<Snapshot>>(int64_t)>& lookup) {
+  return lookup(snapshot_id).and_then([&lookup](const auto& snapshot) {
+    return AncestorsOf(snapshot, lookup);
+  });
+}
+
 Result<bool> SnapshotUtil::IsAncestorOf(const Table& table, int64_t snapshot_id,
                                         int64_t ancestor_snapshot_id) {
   ICEBERG_ASSIGN_OR_RAISE(auto ancestors, AncestorsOf(table, snapshot_id));

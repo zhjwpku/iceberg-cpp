@@ -1,0 +1,292 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+#include "iceberg/update/expire_snapshots.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <iterator>
+#include <memory>
+#include <unordered_set>
+#include <vector>
+
+#include "iceberg/schema.h"
+#include "iceberg/snapshot.h"
+#include "iceberg/table.h"
+#include "iceberg/table_metadata.h"
+#include "iceberg/transaction.h"
+#include "iceberg/util/error_collector.h"
+#include "iceberg/util/macros.h"
+#include "iceberg/util/snapshot_util_internal.h"
+
+namespace iceberg {
+
+Result<std::shared_ptr<ExpireSnapshots>> ExpireSnapshots::Make(
+    std::shared_ptr<Transaction> transaction) {
+  ICEBERG_PRECHECK(transaction != nullptr,
+                   "Cannot create ExpireSnapshots without a transaction");
+  return std::shared_ptr<ExpireSnapshots>(new ExpireSnapshots(std::move(transaction)));
+}
+
+ExpireSnapshots::ExpireSnapshots(std::shared_ptr<Transaction> transaction)
+    : PendingUpdate(std::move(transaction)),
+      current_time_ms_(CurrentTimePointMs()),
+      default_max_ref_age_ms_(base().properties.Get(TableProperties::kMaxRefAgeMs)),
+      default_min_num_snapshots_(
+          base().properties.Get(TableProperties::kMinSnapshotsToKeep)),
+      default_expire_older_than_(current_time_ms_ -
+                                 std::chrono::milliseconds(base().properties.Get(
+                                     TableProperties::kMaxSnapshotAgeMs))) {
+  if (!base().properties.Get(TableProperties::kGcEnabled)) {
+    AddError(
+        ValidationFailed("Cannot expire snapshots: GC is disabled (deleting files may "
+                         "corrupt other tables)"));
+    return;
+  }
+}
+
+ExpireSnapshots::~ExpireSnapshots() = default;
+
+ExpireSnapshots& ExpireSnapshots::ExpireSnapshotId(int64_t snapshot_id) {
+  snapshot_ids_to_expire_.push_back(snapshot_id);
+  specified_snapshot_id_ = true;
+  return *this;
+}
+
+ExpireSnapshots& ExpireSnapshots::ExpireOlderThan(int64_t timestamp_millis) {
+  default_expire_older_than_ = TimePointMsFromUnixMs(timestamp_millis);
+  return *this;
+}
+
+ExpireSnapshots& ExpireSnapshots::RetainLast(int num_snapshots) {
+  ICEBERG_BUILDER_CHECK(num_snapshots > 0,
+                        "Number of snapshots to retain must be positive: {}",
+                        num_snapshots);
+  default_min_num_snapshots_ = num_snapshots;
+  return *this;
+}
+
+ExpireSnapshots& ExpireSnapshots::DeleteWith(
+    std::function<void(const std::string&)> delete_func) {
+  delete_func_ = std::move(delete_func);
+  return *this;
+}
+
+ExpireSnapshots& ExpireSnapshots::CleanupLevel(enum CleanupLevel level) {
+  cleanup_level_ = level;
+  return *this;
+}
+
+ExpireSnapshots& ExpireSnapshots::CleanExpiredMetadata(bool clean) {
+  clean_expired_metadata_ = clean;
+  return *this;
+}
+
+Result<std::unordered_set<int64_t>> ExpireSnapshots::ComputeBranchSnapshotsToRetain(
+    int64_t snapshot_id, TimePointMs expire_snapshot_older_than,
+    int32_t min_snapshots_to_keep) const {
+  ICEBERG_ASSIGN_OR_RAISE(auto snapshots,
+                          SnapshotUtil::AncestorsOf(snapshot_id, [this](int64_t id) {
+                            return base().SnapshotById(id);
+                          }));
+
+  std::unordered_set<int64_t> ids_to_retain;
+  ids_to_retain.reserve(snapshots.size());
+
+  for (const auto& ancestor : snapshots) {
+    ICEBERG_DCHECK(ancestor != nullptr, "Ancestor snapshot is null");
+    if (ids_to_retain.size() < min_snapshots_to_keep ||
+        ancestor->timestamp_ms >= expire_snapshot_older_than) {
+      ids_to_retain.insert(ancestor->snapshot_id);
+    } else {
+      break;
+    }
+  }
+
+  return ids_to_retain;
+}
+
+Result<std::unordered_set<int64_t>> ExpireSnapshots::ComputeAllBranchSnapshotIdsToRetain(
+    const SnapshotToRef& refs) const {
+  std::unordered_set<int64_t> snapshot_ids_to_retain;
+  for (const auto& [key, ref] : refs) {
+    if (ref->type() != SnapshotRefType::kBranch) {
+      continue;
+    }
+    const auto& branch = std::get<SnapshotRef::Branch>(ref->retention);
+    TimePointMs expire_snapshot_older_than =
+        branch.max_snapshot_age_ms.has_value()
+            ? current_time_ms_ -
+                  std::chrono::milliseconds(branch.max_snapshot_age_ms.value())
+            : default_expire_older_than_;
+    int32_t min_snapshots_to_keep =
+        branch.min_snapshots_to_keep.value_or(default_min_num_snapshots_);
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto to_retain,
+        ComputeBranchSnapshotsToRetain(ref->snapshot_id, expire_snapshot_older_than,
+                                       min_snapshots_to_keep));
+    snapshot_ids_to_retain.insert(std::make_move_iterator(to_retain.begin()),
+                                  std::make_move_iterator(to_retain.end()));
+  }
+  return snapshot_ids_to_retain;
+}
+
+Result<std::unordered_set<int64_t>> ExpireSnapshots::UnreferencedSnapshotIdsToRetain(
+    const SnapshotToRef& refs) const {
+  std::unordered_set<int64_t> referenced_ids;
+  for (const auto& [key, ref] : refs) {
+    if (ref->type() == SnapshotRefType::kBranch) {
+      ICEBERG_ASSIGN_OR_RAISE(
+          auto snapshots, SnapshotUtil::AncestorsOf(ref->snapshot_id, [this](int64_t id) {
+            return base().SnapshotById(id);
+          }));
+      for (const auto& snapshot : snapshots) {
+        ICEBERG_DCHECK(snapshot != nullptr, "Ancestor snapshot is null");
+        referenced_ids.insert(snapshot->snapshot_id);
+      }
+    } else {
+      referenced_ids.insert(ref->snapshot_id);
+    }
+  }
+
+  std::unordered_set<int64_t> ids_to_retain;
+  for (const auto& snapshot : base().snapshots) {
+    ICEBERG_DCHECK(snapshot != nullptr, "Snapshot is null");
+    if (!referenced_ids.contains(snapshot->snapshot_id) &&
+        snapshot->timestamp_ms > default_expire_older_than_) {
+      // unreferenced and not old enough to be expired
+      ids_to_retain.insert(snapshot->snapshot_id);
+    }
+  }
+  return ids_to_retain;
+}
+
+Result<ExpireSnapshots::SnapshotToRef> ExpireSnapshots::ComputeRetainedRefs(
+    const SnapshotToRef& refs) const {
+  const TableMetadata& base = this->base();
+  SnapshotToRef retained_refs;
+
+  for (const auto& [key, ref] : refs) {
+    if (key == SnapshotRef::kMainBranch) {
+      retained_refs[key] = ref;
+      continue;
+    }
+
+    std::shared_ptr<Snapshot> snapshot;
+    if (auto result = base.SnapshotById(ref->snapshot_id); result.has_value()) {
+      snapshot = std::move(result.value());
+    } else if (result.error().kind != ErrorKind::kNotFound) {
+      ICEBERG_RETURN_UNEXPECTED(result);
+    }
+
+    auto max_ref_ags_ms = ref->max_ref_age_ms().value_or(default_max_ref_age_ms_);
+    if (snapshot != nullptr) {
+      if (current_time_ms_ - snapshot->timestamp_ms <=
+          std::chrono::milliseconds(max_ref_ags_ms)) {
+        retained_refs[key] = ref;
+      }
+    } else {
+      // Removing invalid refs that point to non-existing snapshot
+    }
+  }
+
+  return retained_refs;
+}
+
+Result<ExpireSnapshots::ApplyResult> ExpireSnapshots::Apply() {
+  ICEBERG_RETURN_UNEXPECTED(CheckErrors());
+
+  const TableMetadata& base = this->base();
+  // Attempt to clean expired metadata even if there are no snapshots to expire.
+  // Table metadata builder takes care of the case when this should actually be a no-op
+  if (base.snapshots.empty() && !clean_expired_metadata_) {
+    return {};
+  }
+
+  std::unordered_set<int64_t> ids_to_retain;
+  ICEBERG_ASSIGN_OR_RAISE(auto retained_refs, ComputeRetainedRefs(base.refs));
+  std::unordered_map<int64_t, std::vector<std::string>> retained_id_to_refs;
+  for (const auto& [key, ref] : retained_refs) {
+    int64_t snapshot_id = ref->snapshot_id;
+    retained_id_to_refs.try_emplace(snapshot_id, std::vector<std::string>{});
+    retained_id_to_refs[snapshot_id].push_back(key);
+    ids_to_retain.insert(snapshot_id);
+  }
+
+  for (int64_t id : snapshot_ids_to_expire_) {
+    ICEBERG_PRECHECK(!retained_id_to_refs.contains(id),
+                     "Cannot expire {}. Still referenced by refs", id);
+  }
+  ICEBERG_ASSIGN_OR_RAISE(auto all_branch_snapshot_ids,
+                          ComputeAllBranchSnapshotIdsToRetain(retained_refs));
+  ICEBERG_ASSIGN_OR_RAISE(auto unreferenced_snapshot_ids,
+                          UnreferencedSnapshotIdsToRetain(retained_refs));
+  ids_to_retain.insert(all_branch_snapshot_ids.begin(), all_branch_snapshot_ids.end());
+  ids_to_retain.insert(unreferenced_snapshot_ids.begin(),
+                       unreferenced_snapshot_ids.end());
+
+  ApplyResult result;
+
+  std::ranges::for_each(base.refs, [&retained_refs, &result](const auto& key_to_ref) {
+    if (!retained_refs.contains(key_to_ref.first)) {
+      result.refs_to_remove.push_back(key_to_ref.first);
+    }
+  });
+  std::ranges::for_each(base.snapshots, [&ids_to_retain, &result](const auto& snapshot) {
+    if (snapshot && !ids_to_retain.contains(snapshot->snapshot_id)) {
+      result.snapshot_ids_to_remove.push_back(snapshot->snapshot_id);
+    }
+  });
+
+  if (clean_expired_metadata_) {
+    std::unordered_set<int32_t> reachable_specs = {base.default_spec_id};
+    std::unordered_set<int32_t> reachable_schemas = {base.current_schema_id};
+
+    // TODO(xiao.dong) parallel processing
+    for (int64_t snapshot_id : ids_to_retain) {
+      ICEBERG_ASSIGN_OR_RAISE(auto snapshot, base.SnapshotById(snapshot_id));
+      SnapshotCache snapshot_cache(snapshot.get());
+      ICEBERG_ASSIGN_OR_RAISE(auto manifests,
+                              snapshot_cache.Manifests(transaction_->table()->io()));
+      for (const auto& manifest : manifests) {
+        reachable_specs.insert(manifest.partition_spec_id);
+      }
+      if (snapshot->schema_id.has_value()) {
+        reachable_schemas.insert(snapshot->schema_id.value());
+      }
+    }
+
+    std::ranges::for_each(
+        base.partition_specs, [&reachable_specs, &result](const auto& spec) {
+          if (!reachable_specs.contains(spec->spec_id())) {
+            result.partition_spec_ids_to_remove.emplace_back(spec->spec_id());
+          }
+        });
+    std::ranges::for_each(base.schemas,
+                          [&reachable_schemas, &result](const auto& schema) {
+                            if (!reachable_schemas.contains(schema->schema_id())) {
+                              result.schema_ids_to_remove.insert(schema->schema_id());
+                            }
+                          });
+  }
+
+  return result;
+}
+
+}  // namespace iceberg

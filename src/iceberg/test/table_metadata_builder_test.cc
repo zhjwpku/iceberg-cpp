@@ -61,7 +61,8 @@ Result<std::unique_ptr<Schema>> CreateDisorderedSchema() {
 }
 
 // Helper function to create base metadata for tests
-std::unique_ptr<TableMetadata> CreateBaseMetadata() {
+std::unique_ptr<TableMetadata> CreateBaseMetadata(
+    std::shared_ptr<PartitionSpec> spec = nullptr) {
   auto metadata = std::make_unique<TableMetadata>();
   metadata->format_version = 2;
   metadata->table_uuid = "test-uuid-1234";
@@ -71,8 +72,13 @@ std::unique_ptr<TableMetadata> CreateBaseMetadata() {
   metadata->last_column_id = 3;
   metadata->current_schema_id = 0;
   metadata->schemas.push_back(CreateTestSchema());
-  metadata->partition_specs.push_back(PartitionSpec::Unpartitioned());
-  metadata->default_spec_id = PartitionSpec::kInitialSpecId;
+  if (spec == nullptr) {
+    metadata->partition_specs.push_back(PartitionSpec::Unpartitioned());
+    metadata->default_spec_id = PartitionSpec::kInitialSpecId;
+  } else {
+    metadata->default_spec_id = spec->spec_id();
+    metadata->partition_specs.push_back(std::move(spec));
+  }
   metadata->last_partition_id = 0;
   metadata->current_snapshot_id = kInvalidSnapshotId;
   metadata->default_sort_order_id = SortOrder::kUnsortedOrderId;
@@ -1125,6 +1131,125 @@ TEST(TableMetadataBuilderTest, RemoveSchemasAfterSchemaChange) {
   builder->RemoveSchemas({1});
   ASSERT_THAT(builder->Build(), IsError(ErrorKind::kValidationFailed));
   ASSERT_THAT(builder->Build(), HasErrorMessage("Cannot remove current schema: 1"));
+}
+
+TEST(TableMetadataBuilderTest, RemoveSnapshotRef) {
+  auto base = CreateBaseMetadata();
+  auto builder = TableMetadataBuilder::BuildFrom(base.get());
+
+  // Add multiple snapshots
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 1}));
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 2}));
+
+  // Add multiple refs
+  ICEBERG_UNWRAP_OR_FAIL(auto ref1, SnapshotRef::MakeBranch(1));
+  ICEBERG_UNWRAP_OR_FAIL(auto ref2, SnapshotRef::MakeBranch(2));
+  builder->SetRef("ref1", std::move(ref1));
+  builder->SetRef("ref2", std::move(ref2));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata, builder->Build());
+  ASSERT_EQ(metadata->refs.size(), 2);
+
+  // Remove one ref
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemoveRef("ref2");
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->refs.size(), 1);
+  EXPECT_TRUE(metadata->refs.contains("ref1"));
+}
+
+TEST(TableMetadataBuilderTest, RemoveSnapshot) {
+  auto base = CreateBaseMetadata();
+  auto builder = TableMetadataBuilder::BuildFrom(base.get());
+
+  // Add multiple snapshots
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 1}));
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 2}));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata, builder->Build());
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+
+  // Remove one snapshot
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  std::vector<int64_t> to_remove{2};
+  builder->RemoveSnapshots(to_remove);
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->snapshots.size(), 1);
+  ASSERT_THAT(metadata->SnapshotById(2), IsError(ErrorKind::kNotFound));
+}
+
+TEST(TableMetadataBuilderTest, RemoveSnapshotNotExist) {
+  auto base = CreateBaseMetadata();
+  auto builder = TableMetadataBuilder::BuildFrom(base.get());
+
+  // Add multiple snapshots
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 1}));
+  builder->AddSnapshot(std::make_shared<Snapshot>(Snapshot{.snapshot_id = 2}));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata, builder->Build());
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+
+  // Remove one snapshot
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemoveSnapshots(std::vector<int64_t>{3});
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemoveSnapshots(std::vector<int64_t>{1, 2});
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->snapshots.size(), 0);
+}
+
+TEST(TableMetadataBuilderTest, RemovePartitionSpec) {
+  // Add multiple specs
+  PartitionField field1(2, 4, "field1", Transform::Identity());
+  PartitionField field2(3, 5, "field2", Transform::Identity());
+  ICEBERG_UNWRAP_OR_FAIL(auto spec1, PartitionSpec::Make(1, {field1}));
+
+  auto base = CreateBaseMetadata(std::move(spec1));
+  auto builder = TableMetadataBuilder::BuildFrom(base.get());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto spec2, PartitionSpec::Make(2, {field1, field2}));
+  builder->AddPartitionSpec(std::move(spec2));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata, builder->Build());
+  ASSERT_EQ(metadata->partition_specs.size(), 2);
+
+  // Remove one spec
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemovePartitionSpecs({2});
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->partition_specs.size(), 1);
+  ASSERT_THAT(metadata->PartitionSpecById(2), IsError(ErrorKind::kNotFound));
+}
+
+TEST(TableMetadataBuilderTest, RemovePartitionSpecNotExist) {
+  // Add multiple specs
+  PartitionField field1(2, 4, "field1", Transform::Identity());
+  PartitionField field2(3, 5, "field2", Transform::Identity());
+  ICEBERG_UNWRAP_OR_FAIL(auto spec1, PartitionSpec::Make(1, {field1}));
+
+  auto base = CreateBaseMetadata(std::move(spec1));
+  auto builder = TableMetadataBuilder::BuildFrom(base.get());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto spec2, PartitionSpec::Make(2, {field1, field2}));
+  builder->AddPartitionSpec(std::move(spec2));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata, builder->Build());
+  ASSERT_EQ(metadata->partition_specs.size(), 2);
+
+  // Remove one non-existing spec
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemovePartitionSpecs({3});
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->partition_specs.size(), 2);
+
+  // Remove all
+  builder = TableMetadataBuilder::BuildFrom(metadata.get());
+  builder->RemovePartitionSpecs({2, 3});
+  ICEBERG_UNWRAP_OR_FAIL(metadata, builder->Build());
+  ASSERT_EQ(metadata->partition_specs.size(), 1);
 }
 
 }  // namespace iceberg

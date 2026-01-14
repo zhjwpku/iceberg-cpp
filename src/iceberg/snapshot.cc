@@ -52,6 +52,19 @@ SnapshotRefType SnapshotRef::type() const noexcept {
       retention);
 }
 
+std::optional<int64_t> SnapshotRef::max_ref_age_ms() const noexcept {
+  return std::visit(
+      [&](const auto& retention) -> std::optional<int64_t> {
+        using T = std::remove_cvref_t<decltype(retention)>;
+        if constexpr (std::is_same_v<T, Branch>) {
+          return retention.max_ref_age_ms;
+        } else {
+          return retention.max_ref_age_ms;
+        }
+      },
+      retention);
+}
+
 Status SnapshotRef::Validate() const {
   if (type() == SnapshotRefType::kBranch) {
     const auto& branch = std::get<Branch>(this->retention);

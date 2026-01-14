@@ -81,6 +81,7 @@ set(ICEBERG_SOURCES
     transform.cc
     transform_function.cc
     type.cc
+    update/expire_snapshots.cc
     update/pending_update.cc
     update/snapshot_update.cc
     update/update_partition_spec.cc

@@ -113,6 +113,8 @@ struct ICEBERG_EXPORT SnapshotRef {
 
   SnapshotRefType type() const noexcept;
 
+  std::optional<int64_t> max_ref_age_ms() const noexcept;
+
   /// \brief Create a branch reference
   ///
   /// \param snapshot_id The snapshot ID for the branch
