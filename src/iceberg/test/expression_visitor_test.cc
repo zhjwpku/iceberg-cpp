@@ -296,14 +296,14 @@ TEST_F(BinderTest, ErrorNestedUnboundField) {
 class IsBoundVisitorTest : public ExpressionVisitorTest {};
 
 TEST_F(IsBoundVisitorTest, Constants) {
-  // True and False are always considered bound
+  // True and False should error out
   auto true_expr = Expressions::AlwaysTrue();
-  ICEBERG_UNWRAP_OR_FAIL(auto is_bound_true, IsBoundVisitor::IsBound(true_expr));
-  EXPECT_TRUE(is_bound_true);
+  auto result_true = IsBoundVisitor::IsBound(true_expr);
+  EXPECT_THAT(result_true, IsError(ErrorKind::kInvalidExpression));
 
   auto false_expr = Expressions::AlwaysFalse();
-  ICEBERG_UNWRAP_OR_FAIL(auto is_bound_false, IsBoundVisitor::IsBound(false_expr));
-  EXPECT_TRUE(is_bound_false);
+  auto result_false = IsBoundVisitor::IsBound(false_expr);
+  EXPECT_THAT(result_false, IsError(ErrorKind::kInvalidExpression));
 }
 
 TEST_F(IsBoundVisitorTest, UnboundPredicate) {

@@ -85,9 +85,13 @@ Result<bool> IsBoundVisitor::IsBound(const std::shared_ptr<Expression>& expr) {
   return Visit<bool, IsBoundVisitor>(expr, visitor);
 }
 
-Result<bool> IsBoundVisitor::AlwaysTrue() { return true; }
+Result<bool> IsBoundVisitor::AlwaysTrue() {
+  return InvalidExpression("IsBoundVisitor does not support AlwaysTrue expression");
+}
 
-Result<bool> IsBoundVisitor::AlwaysFalse() { return true; }
+Result<bool> IsBoundVisitor::AlwaysFalse() {
+  return InvalidExpression("IsBoundVisitor does not support AlwaysFalse expression");
+}
 
 Result<bool> IsBoundVisitor::Not(bool child_result) { return child_result; }
 
