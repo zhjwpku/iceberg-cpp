@@ -1,0 +1,726 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.9.8" xml:lang="en-US">
+  <compounddef id="snapshot_8cc" kind="file" language="C++">
+    <compoundname>snapshot.cc</compoundname>
+    <includes refid="snapshot_8h" local="yes">iceberg/snapshot.h</includes>
+    <includes local="no">memory</includes>
+    <includes refid="file__io_8h" local="yes">iceberg/file_io.h</includes>
+    <includes refid="manifest__list_8h" local="yes">iceberg/manifest/manifest_list.h</includes>
+    <includes refid="manifest__reader_8h" local="yes">iceberg/manifest/manifest_reader.h</includes>
+    <includes refid="macros_8h" local="yes">iceberg/util/macros.h</includes>
+    <includes refid="string__util_8h" local="yes">iceberg/util/string_util.h</includes>
+    <incdepgraph>
+      <node id="14">
+        <label>iceberg/constants.h</label>
+        <link refid="constants_8h"/>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+      </node>
+      <node id="29">
+        <label>iceberg/exception.h</label>
+        <link refid="exception_8h"/>
+        <childnode refid="30" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+      </node>
+      <node id="42">
+        <label>iceberg/file_io.h</label>
+        <link refid="file__io_8h_source"/>
+        <childnode refid="4" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+      </node>
+      <node id="10">
+        <label>iceberg/iceberg_export.h</label>
+        <link refid="iceberg__export_8h_source"/>
+      </node>
+      <node id="11">
+        <label>iceberg/manifest/manifest_list.h</label>
+        <link refid="manifest__list_8h"/>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="4" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="13" relation="include">
+        </childnode>
+        <childnode refid="14" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="15" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="31" relation="include">
+        </childnode>
+        <childnode refid="32" relation="include">
+        </childnode>
+        <childnode refid="40" relation="include">
+        </childnode>
+      </node>
+      <node id="43">
+        <label>iceberg/manifest/manifest_reader.h</label>
+        <link refid="manifest__reader_8h"/>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="16" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+      </node>
+      <node id="17">
+        <label>iceberg/partition_field.h</label>
+        <link refid="partition__field_8h"/>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+        <childnode refid="19" relation="include">
+        </childnode>
+      </node>
+      <node id="15">
+        <label>iceberg/partition_spec.h</label>
+        <link refid="partition__spec_8h"/>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="4" relation="include">
+        </childnode>
+        <childnode refid="5" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="16" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="17" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+        <childnode refid="19" relation="include">
+        </childnode>
+        <childnode refid="23" relation="include">
+        </childnode>
+      </node>
+      <node id="20">
+        <label>iceberg/result.h</label>
+        <link refid="result_8h_source"/>
+        <childnode refid="21" relation="include">
+        </childnode>
+        <childnode refid="22" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+      </node>
+      <node id="31">
+        <label>iceberg/schema_field.h</label>
+        <link refid="schema__field_8h"/>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+        <childnode refid="19" relation="include">
+        </childnode>
+      </node>
+      <node id="1">
+        <label>iceberg/snapshot.cc</label>
+        <link refid="snapshot_8cc"/>
+        <childnode refid="2" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="42" relation="include">
+        </childnode>
+        <childnode refid="11" relation="include">
+        </childnode>
+        <childnode refid="43" relation="include">
+        </childnode>
+        <childnode refid="27" relation="include">
+        </childnode>
+        <childnode refid="44" relation="include">
+        </childnode>
+      </node>
+      <node id="2">
+        <label>iceberg/snapshot.h</label>
+        <link refid="snapshot_8h_source"/>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="4" relation="include">
+        </childnode>
+        <childnode refid="5" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="9" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="11" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+        <childnode refid="23" relation="include">
+        </childnode>
+        <childnode refid="38" relation="include">
+        </childnode>
+      </node>
+      <node id="32">
+        <label>iceberg/table_metadata.h</label>
+        <link refid="table__metadata_8h"/>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="16" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="33" relation="include">
+        </childnode>
+        <childnode refid="18" relation="include">
+        </childnode>
+        <childnode refid="37" relation="include">
+        </childnode>
+        <childnode refid="23" relation="include">
+        </childnode>
+        <childnode refid="38" relation="include">
+        </childnode>
+      </node>
+      <node id="33">
+        <label>iceberg/table_properties.h</label>
+        <link refid="table__properties_8h_source"/>
+        <childnode refid="34" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="35" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="36" relation="include">
+        </childnode>
+      </node>
+      <node id="40">
+        <label>iceberg/type.h</label>
+        <link refid="type_8h"/>
+        <childnode refid="41" relation="include">
+        </childnode>
+        <childnode refid="12" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+        <childnode refid="4" relation="include">
+        </childnode>
+        <childnode refid="5" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="16" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="31" relation="include">
+        </childnode>
+        <childnode refid="19" relation="include">
+        </childnode>
+        <childnode refid="23" relation="include">
+        </childnode>
+      </node>
+      <node id="18">
+        <label>iceberg/type_fwd.h</label>
+        <link refid="type__fwd_8h"/>
+      </node>
+      <node id="36">
+        <label>iceberg/util/config.h</label>
+        <link refid="config_8h_source"/>
+        <childnode refid="22" relation="include">
+        </childnode>
+        <childnode refid="25" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="8" relation="include">
+        </childnode>
+        <childnode refid="29" relation="include">
+        </childnode>
+      </node>
+      <node id="37">
+        <label>iceberg/util/error_collector.h</label>
+        <link refid="error__collector_8h"/>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="16" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+      </node>
+      <node id="19">
+        <label>iceberg/util/formattable.h</label>
+        <link refid="formattable_8h"/>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+      </node>
+      <node id="23">
+        <label>iceberg/util/lazy.h</label>
+        <link refid="lazy_8h"/>
+        <childnode refid="24" relation="include">
+        </childnode>
+        <childnode refid="25" relation="include">
+        </childnode>
+        <childnode refid="26" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+        <childnode refid="27" relation="include">
+        </childnode>
+      </node>
+      <node id="27">
+        <label>iceberg/util/macros.h</label>
+        <link refid="macros_8h_source"/>
+        <childnode refid="28" relation="include">
+        </childnode>
+        <childnode refid="29" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+      </node>
+      <node id="44">
+        <label>iceberg/util/string_util.h</label>
+        <link refid="string__util_8h_source"/>
+        <childnode refid="45" relation="include">
+        </childnode>
+        <childnode refid="46" relation="include">
+        </childnode>
+        <childnode refid="47" relation="include">
+        </childnode>
+        <childnode refid="6" relation="include">
+        </childnode>
+        <childnode refid="7" relation="include">
+        </childnode>
+        <childnode refid="48" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+        <childnode refid="20" relation="include">
+        </childnode>
+      </node>
+      <node id="38">
+        <label>iceberg/util/timepoint.h</label>
+        <link refid="timepoint_8h_source"/>
+        <childnode refid="39" relation="include">
+        </childnode>
+        <childnode refid="10" relation="include">
+        </childnode>
+      </node>
+      <node id="45">
+        <label>algorithm</label>
+      </node>
+      <node id="41">
+        <label>array</label>
+      </node>
+      <node id="28">
+        <label>cassert</label>
+      </node>
+      <node id="46">
+        <label>charconv</label>
+      </node>
+      <node id="39">
+        <label>chrono</label>
+      </node>
+      <node id="24">
+        <label>concepts</label>
+      </node>
+      <node id="12">
+        <label>cstdint</label>
+      </node>
+      <node id="21">
+        <label>expected</label>
+      </node>
+      <node id="22">
+        <label>format</label>
+      </node>
+      <node id="25">
+        <label>functional</label>
+      </node>
+      <node id="34">
+        <label>limits</label>
+      </node>
+      <node id="3">
+        <label>memory</label>
+      </node>
+      <node id="26">
+        <label>mutex</label>
+      </node>
+      <node id="4">
+        <label>optional</label>
+      </node>
+      <node id="47">
+        <label>ranges</label>
+      </node>
+      <node id="5">
+        <label>span</label>
+      </node>
+      <node id="30">
+        <label>stdexcept</label>
+      </node>
+      <node id="6">
+        <label>string</label>
+      </node>
+      <node id="7">
+        <label>string_view</label>
+      </node>
+      <node id="48">
+        <label>typeinfo</label>
+      </node>
+      <node id="8">
+        <label>unordered_map</label>
+      </node>
+      <node id="35">
+        <label>unordered_set</label>
+      </node>
+      <node id="13">
+        <label>utility</label>
+      </node>
+      <node id="9">
+        <label>variant</label>
+      </node>
+      <node id="16">
+        <label>vector</label>
+      </node>
+    </incdepgraph>
+    <innernamespace refid="namespaceiceberg">iceberg</innernamespace>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <programlisting>
+<codeline lineno="1"><highlight class="comment">/*</highlight></codeline>
+<codeline lineno="2"><highlight class="comment"><sp/>*<sp/>Licensed<sp/>to<sp/>the<sp/>Apache<sp/>Software<sp/>Foundation<sp/>(ASF)<sp/>under<sp/>one</highlight></codeline>
+<codeline lineno="3"><highlight class="comment"><sp/>*<sp/>or<sp/>more<sp/>contributor<sp/>license<sp/>agreements.<sp/><sp/>See<sp/>the<sp/>NOTICE<sp/>file</highlight></codeline>
+<codeline lineno="4"><highlight class="comment"><sp/>*<sp/>distributed<sp/>with<sp/>this<sp/>work<sp/>for<sp/>additional<sp/>information</highlight></codeline>
+<codeline lineno="5"><highlight class="comment"><sp/>*<sp/>regarding<sp/>copyright<sp/>ownership.<sp/><sp/>The<sp/>ASF<sp/>licenses<sp/>this<sp/>file</highlight></codeline>
+<codeline lineno="6"><highlight class="comment"><sp/>*<sp/>to<sp/>you<sp/>under<sp/>the<sp/>Apache<sp/>License,<sp/>Version<sp/>2.0<sp/>(the</highlight></codeline>
+<codeline lineno="7"><highlight class="comment"><sp/>*<sp/>&quot;License&quot;);<sp/>you<sp/>may<sp/>not<sp/>use<sp/>this<sp/>file<sp/>except<sp/>in<sp/>compliance</highlight></codeline>
+<codeline lineno="8"><highlight class="comment"><sp/>*<sp/>with<sp/>the<sp/>License.<sp/><sp/>You<sp/>may<sp/>obtain<sp/>a<sp/>copy<sp/>of<sp/>the<sp/>License<sp/>at</highlight></codeline>
+<codeline lineno="9"><highlight class="comment"><sp/>*</highlight></codeline>
+<codeline lineno="10"><highlight class="comment"><sp/>*<sp/><sp/><sp/>http://www.apache.org/licenses/LICENSE-2.0</highlight></codeline>
+<codeline lineno="11"><highlight class="comment"><sp/>*</highlight></codeline>
+<codeline lineno="12"><highlight class="comment"><sp/>*<sp/>Unless<sp/>required<sp/>by<sp/>applicable<sp/>law<sp/>or<sp/>agreed<sp/>to<sp/>in<sp/>writing,</highlight></codeline>
+<codeline lineno="13"><highlight class="comment"><sp/>*<sp/>software<sp/>distributed<sp/>under<sp/>the<sp/>License<sp/>is<sp/>distributed<sp/>on<sp/>an</highlight></codeline>
+<codeline lineno="14"><highlight class="comment"><sp/>*<sp/>&quot;AS<sp/>IS&quot;<sp/>BASIS,<sp/>WITHOUT<sp/>WARRANTIES<sp/>OR<sp/>CONDITIONS<sp/>OF<sp/>ANY</highlight></codeline>
+<codeline lineno="15"><highlight class="comment"><sp/>*<sp/>KIND,<sp/>either<sp/>express<sp/>or<sp/>implied.<sp/><sp/>See<sp/>the<sp/>License<sp/>for<sp/>the</highlight></codeline>
+<codeline lineno="16"><highlight class="comment"><sp/>*<sp/>specific<sp/>language<sp/>governing<sp/>permissions<sp/>and<sp/>limitations</highlight></codeline>
+<codeline lineno="17"><highlight class="comment"><sp/>*<sp/>under<sp/>the<sp/>License.</highlight></codeline>
+<codeline lineno="18"><highlight class="comment"><sp/>*/</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="19"><highlight class="normal"></highlight></codeline>
+<codeline lineno="20"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;iceberg/snapshot.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="21"><highlight class="normal"></highlight></codeline>
+<codeline lineno="22"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&lt;memory&gt;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="23"><highlight class="normal"></highlight></codeline>
+<codeline lineno="24"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;iceberg/file_io.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="25"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;<ref refid="manifest__list_8h" kindref="compound">iceberg/manifest/manifest_list.h</ref>&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="26"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;<ref refid="manifest__reader_8h" kindref="compound">iceberg/manifest/manifest_reader.h</ref>&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="27"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;iceberg/util/macros.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="28"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;iceberg/util/string_util.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="29"><highlight class="normal"></highlight></codeline>
+<codeline lineno="30"><highlight class="normal"></highlight><highlight class="keyword">namespace<sp/></highlight><highlight class="normal">iceberg<sp/>{</highlight></codeline>
+<codeline lineno="31"><highlight class="normal"></highlight></codeline>
+<codeline lineno="32"><highlight class="normal"></highlight><highlight class="keywordtype">bool</highlight><highlight class="normal"><sp/>SnapshotRef::Branch::Equals(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/>SnapshotRef::Branch&amp;<sp/>other)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="33"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1_1Branch_1a4e263cc1792d5e41e495fc1d0d22c48a" kindref="member">min_snapshots_to_keep</ref><sp/>==<sp/>other.min_snapshots_to_keep<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="34"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="structiceberg_1_1SnapshotRef_1_1Branch_1a51b4eb07baf51b45ae89bc533092db3f" kindref="member">max_snapshot_age_ms</ref><sp/>==<sp/>other.max_snapshot_age_ms<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="35"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="structiceberg_1_1SnapshotRef_1_1Branch_1a66bddbcaaf9655ed5c4528ecab20d57e" kindref="member">max_ref_age_ms</ref><sp/>==<sp/>other.max_ref_age_ms;</highlight></codeline>
+<codeline lineno="36"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="37"><highlight class="normal"></highlight></codeline>
+<codeline lineno="38"><highlight class="normal"></highlight><highlight class="keywordtype">bool</highlight><highlight class="normal"><sp/>SnapshotRef::Tag::Equals(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/>SnapshotRef::Tag&amp;<sp/>other)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="39"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>max_ref_age_ms<sp/>==<sp/>other.max_ref_age_ms;</highlight></codeline>
+<codeline lineno="40"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="41"><highlight class="normal"></highlight></codeline>
+<codeline lineno="42"><highlight class="normal">SnapshotRefType<sp/>SnapshotRef::type()<sp/>const<sp/>noexcept<sp/>{</highlight></codeline>
+<codeline lineno="43"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::visit(</highlight></codeline>
+<codeline lineno="44"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>[&amp;](</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)<sp/>-&gt;<sp/>SnapshotRefType<sp/>{</highlight></codeline>
+<codeline lineno="45"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keyword">using<sp/></highlight><highlight class="normal">T<sp/>=<sp/>std::remove_cvref_t&lt;</highlight><highlight class="keyword">decltype</highlight><highlight class="normal">(<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)&gt;;</highlight></codeline>
+<codeline lineno="46"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">constexpr</highlight><highlight class="normal"><sp/>(std::is_same_v&lt;T,<sp/>Branch&gt;)<sp/>{</highlight></codeline>
+<codeline lineno="47"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>SnapshotRefType::kBranch;</highlight></codeline>
+<codeline lineno="48"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>}<sp/></highlight><highlight class="keywordflow">else</highlight><highlight class="normal"><sp/>{</highlight></codeline>
+<codeline lineno="49"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>SnapshotRefType::kTag;</highlight></codeline>
+<codeline lineno="50"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>}</highlight></codeline>
+<codeline lineno="51"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>},</highlight></codeline>
+<codeline lineno="52"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>);</highlight></codeline>
+<codeline lineno="53"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="54"><highlight class="normal"></highlight></codeline>
+<codeline lineno="55"><highlight class="normal">std::optional&lt;int64_t&gt;<sp/>SnapshotRef::max_ref_age_ms()<sp/>const<sp/>noexcept<sp/>{</highlight></codeline>
+<codeline lineno="56"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::visit(</highlight></codeline>
+<codeline lineno="57"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>[&amp;](</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)<sp/>-&gt;<sp/>std::optional&lt;int64_t&gt;<sp/>{</highlight></codeline>
+<codeline lineno="58"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keyword">using<sp/></highlight><highlight class="normal">T<sp/>=<sp/>std::remove_cvref_t&lt;</highlight><highlight class="keyword">decltype</highlight><highlight class="normal">(<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)&gt;;</highlight></codeline>
+<codeline lineno="59"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">constexpr</highlight><highlight class="normal"><sp/>(std::is_same_v&lt;T,<sp/>Branch&gt;)<sp/>{</highlight></codeline>
+<codeline lineno="60"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>.max_ref_age_ms;</highlight></codeline>
+<codeline lineno="61"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>}<sp/></highlight><highlight class="keywordflow">else</highlight><highlight class="normal"><sp/>{</highlight></codeline>
+<codeline lineno="62"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>.max_ref_age_ms;</highlight></codeline>
+<codeline lineno="63"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>}</highlight></codeline>
+<codeline lineno="64"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>},</highlight></codeline>
+<codeline lineno="65"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>);</highlight></codeline>
+<codeline lineno="66"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="67"><highlight class="normal"></highlight></codeline>
+<codeline lineno="68"><highlight class="normal">Status<sp/><ref refid="structiceberg_1_1SnapshotRef_1a50cdaf229521f701109fd99d6f51fb32" kindref="member">SnapshotRef::Validate</ref>()</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="69"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(type()<sp/>==<sp/>SnapshotRefType::kBranch)<sp/>{</highlight></codeline>
+<codeline lineno="70"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>branch<sp/>=<sp/>std::get&lt;Branch&gt;(this-&gt;<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>);</highlight></codeline>
+<codeline lineno="71"><highlight class="normal"><sp/><sp/><sp/><sp/>ICEBERG_CHECK(!branch.min_snapshots_to_keep.has_value()<sp/>||</highlight></codeline>
+<codeline lineno="72"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>branch.min_snapshots_to_keep.value()<sp/>&gt;<sp/>0,</highlight></codeline>
+<codeline lineno="73"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Min<sp/>snapshots<sp/>to<sp/>keep<sp/>must<sp/>be<sp/>greater<sp/>than<sp/>0&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="74"><highlight class="normal"><sp/><sp/><sp/><sp/>ICEBERG_CHECK(</highlight></codeline>
+<codeline lineno="75"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>!branch.max_snapshot_age_ms.has_value()<sp/>||<sp/>branch.max_snapshot_age_ms.value()<sp/>&gt;<sp/>0,</highlight></codeline>
+<codeline lineno="76"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Max<sp/>snapshot<sp/>age<sp/>must<sp/>be<sp/>greater<sp/>than<sp/>0<sp/>ms&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="77"><highlight class="normal"><sp/><sp/><sp/><sp/>ICEBERG_CHECK(!branch.max_ref_age_ms.has_value()<sp/>||<sp/>branch.max_ref_age_ms.value()<sp/>&gt;<sp/>0,</highlight></codeline>
+<codeline lineno="78"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Max<sp/>reference<sp/>age<sp/>must<sp/>be<sp/>greater<sp/>than<sp/>0&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="79"><highlight class="normal"><sp/><sp/>}<sp/></highlight><highlight class="keywordflow">else</highlight><highlight class="normal"><sp/>{</highlight></codeline>
+<codeline lineno="80"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>tag<sp/>=<sp/>std::get&lt;Tag&gt;(this-&gt;<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>);</highlight></codeline>
+<codeline lineno="81"><highlight class="normal"><sp/><sp/><sp/><sp/>ICEBERG_CHECK(!tag.max_ref_age_ms.has_value()<sp/>||<sp/>tag.max_ref_age_ms.value()<sp/>&gt;<sp/>0,</highlight></codeline>
+<codeline lineno="82"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Max<sp/>reference<sp/>age<sp/>must<sp/>be<sp/>greater<sp/>than<sp/>0&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="83"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="84"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>{};</highlight></codeline>
+<codeline lineno="85"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="86"><highlight class="normal"></highlight></codeline>
+<codeline lineno="87"><highlight class="normal">Result&lt;std::unique_ptr&lt;SnapshotRef&gt;&gt;<sp/><ref refid="structiceberg_1_1SnapshotRef_1ae0d62ab650d10cd4381332760464e187" kindref="member">SnapshotRef::MakeBranch</ref>(</highlight></codeline>
+<codeline lineno="88"><highlight class="normal"><sp/><sp/><sp/><sp/>int64_t<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,<sp/>std::optional&lt;int32_t&gt;<sp/>min_snapshots_to_keep,</highlight></codeline>
+<codeline lineno="89"><highlight class="normal"><sp/><sp/><sp/><sp/>std::optional&lt;int64_t&gt;<sp/>max_snapshot_age_ms,<sp/>std::optional&lt;int64_t&gt;<sp/>max_ref_age_ms)<sp/>{</highlight></codeline>
+<codeline lineno="90"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>ref<sp/>=<sp/>std::make_unique&lt;SnapshotRef&gt;(</highlight></codeline>
+<codeline lineno="91"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>SnapshotRef{.snapshot_id<sp/>=<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,</highlight></codeline>
+<codeline lineno="92"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>.retention<sp/>=<sp/>Branch{</highlight></codeline>
+<codeline lineno="93"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>.min_snapshots_to_keep<sp/>=<sp/>min_snapshots_to_keep,</highlight></codeline>
+<codeline lineno="94"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>.max_snapshot_age_ms<sp/>=<sp/>max_snapshot_age_ms,</highlight></codeline>
+<codeline lineno="95"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>.max_ref_age_ms<sp/>=<sp/>max_ref_age_ms,</highlight></codeline>
+<codeline lineno="96"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>}});</highlight></codeline>
+<codeline lineno="97"><highlight class="normal"><sp/><sp/>ICEBERG_RETURN_UNEXPECTED(ref-&gt;Validate());</highlight></codeline>
+<codeline lineno="98"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>ref;</highlight></codeline>
+<codeline lineno="99"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="100"><highlight class="normal"></highlight></codeline>
+<codeline lineno="101"><highlight class="normal">Result&lt;std::unique_ptr&lt;SnapshotRef&gt;&gt;<sp/><ref refid="structiceberg_1_1SnapshotRef_1a91fa5ae1565099c173a1c0e0e7851f7c" kindref="member">SnapshotRef::MakeTag</ref>(</highlight></codeline>
+<codeline lineno="102"><highlight class="normal"><sp/><sp/><sp/><sp/>int64_t<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,<sp/>std::optional&lt;int64_t&gt;<sp/>max_ref_age_ms)<sp/>{</highlight></codeline>
+<codeline lineno="103"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>ref<sp/>=<sp/>std::make_unique&lt;SnapshotRef&gt;(SnapshotRef{</highlight></codeline>
+<codeline lineno="104"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.snapshot_id<sp/>=<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,<sp/>.retention<sp/>=<sp/>Tag{.max_ref_age_ms<sp/>=<sp/>max_ref_age_ms}});</highlight></codeline>
+<codeline lineno="105"><highlight class="normal"><sp/><sp/>ICEBERG_RETURN_UNEXPECTED(ref-&gt;Validate());</highlight></codeline>
+<codeline lineno="106"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>ref;</highlight></codeline>
+<codeline lineno="107"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="108"><highlight class="normal"></highlight></codeline>
+<codeline lineno="109"><highlight class="normal">std::unique_ptr&lt;SnapshotRef&gt;<sp/><ref refid="structiceberg_1_1SnapshotRef_1a873b9724bd77edbf12dbabdb98a37523" kindref="member">SnapshotRef::Clone</ref>(</highlight></codeline>
+<codeline lineno="110"><highlight class="normal"><sp/><sp/><sp/><sp/>std::optional&lt;int64_t&gt;<sp/>new_snapshot_id)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="111"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>ref<sp/>=<sp/>std::make_unique&lt;SnapshotRef&gt;();</highlight></codeline>
+<codeline lineno="112"><highlight class="normal"><sp/><sp/>ref-&gt;snapshot_id<sp/>=<sp/>new_snapshot_id.value_or(<ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>);</highlight></codeline>
+<codeline lineno="113"><highlight class="normal"><sp/><sp/>ref-&gt;retention<sp/>=<sp/><ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>;</highlight></codeline>
+<codeline lineno="114"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>ref;</highlight></codeline>
+<codeline lineno="115"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="116"><highlight class="normal"></highlight></codeline>
+<codeline lineno="117"><highlight class="normal"></highlight><highlight class="keywordtype">bool</highlight><highlight class="normal"><sp/>SnapshotRef::Equals(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/>SnapshotRef&amp;<sp/>other)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="118"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(</highlight><highlight class="keyword">this</highlight><highlight class="normal"><sp/>==<sp/>&amp;other)<sp/>{</highlight></codeline>
+<codeline lineno="119"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">true</highlight><highlight class="normal">;</highlight></codeline>
+<codeline lineno="120"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="121"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(type()<sp/>!=<sp/>other.type())<sp/>{</highlight></codeline>
+<codeline lineno="122"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">false</highlight><highlight class="normal">;</highlight></codeline>
+<codeline lineno="123"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="124"><highlight class="normal"></highlight></codeline>
+<codeline lineno="125"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(type()<sp/>==<sp/>SnapshotRefType::kBranch)<sp/>{</highlight></codeline>
+<codeline lineno="126"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref><sp/>==<sp/>other.snapshot_id<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="127"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>std::get&lt;Branch&gt;(<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)<sp/>==<sp/>std::get&lt;Branch&gt;(other.retention);</highlight></codeline>
+<codeline lineno="128"><highlight class="normal"></highlight></codeline>
+<codeline lineno="129"><highlight class="normal"><sp/><sp/>}<sp/></highlight><highlight class="keywordflow">else</highlight><highlight class="normal"><sp/>{</highlight></codeline>
+<codeline lineno="130"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref><sp/>==<sp/>other.snapshot_id<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="131"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>std::get&lt;Tag&gt;(<ref refid="structiceberg_1_1SnapshotRef_1ae89f6fb03dacc07e6cde3c81a133add1" kindref="member">retention</ref>)<sp/>==<sp/>std::get&lt;Tag&gt;(other.retention);</highlight></codeline>
+<codeline lineno="132"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="133"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="134"><highlight class="normal"></highlight></codeline>
+<codeline lineno="135"><highlight class="normal">std::optional&lt;std::string_view&gt;<sp/><ref refid="structiceberg_1_1Snapshot_1aee0614438928f4f25b802846c3719cc8" kindref="member">Snapshot::Operation</ref>()</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="136"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>it<sp/>=<sp/>summary.find(<ref refid="structiceberg_1_1SnapshotSummaryFields_1ada7f5effa8afb4169e68ed2639bd4fde" kindref="member">SnapshotSummaryFields::kOperation</ref>);</highlight></codeline>
+<codeline lineno="137"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(it<sp/>!=<sp/>summary.end())<sp/>{</highlight></codeline>
+<codeline lineno="138"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>it-&gt;second;</highlight></codeline>
+<codeline lineno="139"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="140"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::nullopt;</highlight></codeline>
+<codeline lineno="141"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="142"><highlight class="normal"></highlight></codeline>
+<codeline lineno="143"><highlight class="normal">Result&lt;std::optional&lt;int64_t&gt;&gt;<sp/><ref refid="structiceberg_1_1Snapshot_1af2eba27095e7a55b95affdab9d8f11a1" kindref="member">Snapshot::FirstRowId</ref>()</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="144"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>it<sp/>=<sp/>summary.find(<ref refid="structiceberg_1_1SnapshotSummaryFields_1a2b56093fd8bb220fdb55834b1a23e61b" kindref="member">SnapshotSummaryFields::kFirstRowId</ref>);</highlight></codeline>
+<codeline lineno="145"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(it<sp/>==<sp/>summary.end())<sp/>{</highlight></codeline>
+<codeline lineno="146"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::nullopt;</highlight></codeline>
+<codeline lineno="147"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="148"><highlight class="normal"></highlight></codeline>
+<codeline lineno="149"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>StringUtils::ParseInt&lt;int64_t&gt;(it-&gt;second);</highlight></codeline>
+<codeline lineno="150"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="151"><highlight class="normal"></highlight></codeline>
+<codeline lineno="152"><highlight class="normal">Result&lt;std::optional&lt;int64_t&gt;&gt;<sp/><ref refid="structiceberg_1_1Snapshot_1abe3b761b04f61610bda41e16f4d0cead" kindref="member">Snapshot::AddedRows</ref>()</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="153"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>it<sp/>=<sp/>summary.find(<ref refid="structiceberg_1_1SnapshotSummaryFields_1a4e4fac2b70ad11701e6e8800c6508833" kindref="member">SnapshotSummaryFields::kAddedRows</ref>);</highlight></codeline>
+<codeline lineno="154"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(it<sp/>==<sp/>summary.end())<sp/>{</highlight></codeline>
+<codeline lineno="155"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::nullopt;</highlight></codeline>
+<codeline lineno="156"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="157"><highlight class="normal"></highlight></codeline>
+<codeline lineno="158"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>StringUtils::ParseInt&lt;int64_t&gt;(it-&gt;second);</highlight></codeline>
+<codeline lineno="159"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="160"><highlight class="normal"></highlight></codeline>
+<codeline lineno="161"><highlight class="normal"></highlight><highlight class="keywordtype">bool</highlight><highlight class="normal"><sp/>Snapshot::Equals(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/>Snapshot&amp;<sp/>other)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="162"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(</highlight><highlight class="keyword">this</highlight><highlight class="normal"><sp/>==<sp/>&amp;other)<sp/>{</highlight></codeline>
+<codeline lineno="163"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">true</highlight><highlight class="normal">;</highlight></codeline>
+<codeline lineno="164"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="165"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref><sp/>==<sp/>other.snapshot_id<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="166"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>parent_snapshot_id<sp/>==<sp/>other.parent_snapshot_id<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="167"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>sequence_number<sp/>==<sp/>other.sequence_number<sp/>&amp;&amp;<sp/>timestamp_ms<sp/>==<sp/>other.timestamp_ms<sp/>&amp;&amp;</highlight></codeline>
+<codeline lineno="168"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>schema_id<sp/>==<sp/>other.schema_id;</highlight></codeline>
+<codeline lineno="169"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="170"><highlight class="normal"></highlight></codeline>
+<codeline lineno="171"><highlight class="normal">Result&lt;std::unique_ptr&lt;Snapshot&gt;&gt;<sp/><ref refid="structiceberg_1_1Snapshot_1a38ea2c2441df2688f97b4ff1eca256d5" kindref="member">Snapshot::Make</ref>(</highlight></codeline>
+<codeline lineno="172"><highlight class="normal"><sp/><sp/><sp/><sp/>int64_t<sp/>sequence_number,<sp/>int64_t<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,</highlight></codeline>
+<codeline lineno="173"><highlight class="normal"><sp/><sp/><sp/><sp/>std::optional&lt;int64_t&gt;<sp/>parent_snapshot_id,<sp/>TimePointMs<sp/>timestamp_ms,</highlight></codeline>
+<codeline lineno="174"><highlight class="normal"><sp/><sp/><sp/><sp/>std::string<sp/>operation,<sp/>std::unordered_map&lt;std::string,<sp/>std::string&gt;<sp/>summary,</highlight></codeline>
+<codeline lineno="175"><highlight class="normal"><sp/><sp/><sp/><sp/>std::optional&lt;int32_t&gt;<sp/>schema_id,<sp/>std::string<sp/>manifest_list,</highlight></codeline>
+<codeline lineno="176"><highlight class="normal"><sp/><sp/><sp/><sp/>std::optional&lt;int64_t&gt;<sp/>first_row_id,<sp/>std::optional&lt;int64_t&gt;<sp/>added_rows)<sp/>{</highlight></codeline>
+<codeline lineno="177"><highlight class="normal"><sp/><sp/>ICEBERG_PRECHECK(!operation.empty(),<sp/></highlight><highlight class="stringliteral">&quot;Operation<sp/>cannot<sp/>be<sp/>empty&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="178"><highlight class="normal"><sp/><sp/>ICEBERG_PRECHECK(!first_row_id.has_value()<sp/>||<sp/>first_row_id.value()<sp/>&gt;=<sp/>0,</highlight></codeline>
+<codeline lineno="179"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Invalid<sp/>first-row-id<sp/>(cannot<sp/>be<sp/>negative):<sp/>{}&quot;</highlight><highlight class="normal">,<sp/>first_row_id.value());</highlight></codeline>
+<codeline lineno="180"><highlight class="normal"><sp/><sp/>ICEBERG_PRECHECK(!added_rows.has_value()<sp/>||<sp/>added_rows.value()<sp/>&gt;=<sp/>0,</highlight></codeline>
+<codeline lineno="181"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Invalid<sp/>added-rows<sp/>(cannot<sp/>be<sp/>negative):<sp/>{}&quot;</highlight><highlight class="normal">,<sp/>added_rows.value());</highlight></codeline>
+<codeline lineno="182"><highlight class="normal"><sp/><sp/>ICEBERG_PRECHECK(!first_row_id.has_value()<sp/>||<sp/>added_rows.has_value(),</highlight></codeline>
+<codeline lineno="183"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/></highlight><highlight class="stringliteral">&quot;Missing<sp/>added-rows<sp/>when<sp/>first-row-id<sp/>is<sp/>set&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="184"><highlight class="normal"><sp/><sp/>summary[<ref refid="structiceberg_1_1SnapshotSummaryFields_1ada7f5effa8afb4169e68ed2639bd4fde" kindref="member">SnapshotSummaryFields::kOperation</ref>]<sp/>=<sp/>operation;</highlight></codeline>
+<codeline lineno="185"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(first_row_id.has_value())<sp/>{</highlight></codeline>
+<codeline lineno="186"><highlight class="normal"><sp/><sp/><sp/><sp/>summary[<ref refid="structiceberg_1_1SnapshotSummaryFields_1a2b56093fd8bb220fdb55834b1a23e61b" kindref="member">SnapshotSummaryFields::kFirstRowId</ref>]<sp/>=<sp/>std::to_string(first_row_id.value());</highlight></codeline>
+<codeline lineno="187"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="188"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(added_rows.has_value())<sp/>{</highlight></codeline>
+<codeline lineno="189"><highlight class="normal"><sp/><sp/><sp/><sp/>summary[<ref refid="structiceberg_1_1SnapshotSummaryFields_1a4e4fac2b70ad11701e6e8800c6508833" kindref="member">SnapshotSummaryFields::kAddedRows</ref>]<sp/>=<sp/>std::to_string(added_rows.value());</highlight></codeline>
+<codeline lineno="190"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="191"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::make_unique&lt;Snapshot&gt;(Snapshot{</highlight></codeline>
+<codeline lineno="192"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.snapshot_id<sp/>=<sp/><ref refid="structiceberg_1_1SnapshotRef_1a63ac8ff0babbe68126fb52e54e7e1adb" kindref="member">snapshot_id</ref>,</highlight></codeline>
+<codeline lineno="193"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.parent_snapshot_id<sp/>=<sp/>parent_snapshot_id,</highlight></codeline>
+<codeline lineno="194"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.sequence_number<sp/>=<sp/>sequence_number,</highlight></codeline>
+<codeline lineno="195"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.timestamp_ms<sp/>=<sp/>timestamp_ms,</highlight></codeline>
+<codeline lineno="196"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.manifest_list<sp/>=<sp/>std::move(manifest_list),</highlight></codeline>
+<codeline lineno="197"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.summary<sp/>=<sp/>std::move(summary),</highlight></codeline>
+<codeline lineno="198"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>.schema_id<sp/>=<sp/>schema_id,</highlight></codeline>
+<codeline lineno="199"><highlight class="normal"><sp/><sp/>});</highlight></codeline>
+<codeline lineno="200"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="201"><highlight class="normal"></highlight></codeline>
+<codeline lineno="202"><highlight class="normal">Result&lt;SnapshotCache::ManifestsCache&gt;<sp/>SnapshotCache::InitManifestsCache(</highlight></codeline>
+<codeline lineno="203"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/>Snapshot*<sp/>snapshot,<sp/>std::shared_ptr&lt;FileIO&gt;<sp/>file_io)<sp/>{</highlight></codeline>
+<codeline lineno="204"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(file_io<sp/>==<sp/></highlight><highlight class="keyword">nullptr</highlight><highlight class="normal">)<sp/>{</highlight></codeline>
+<codeline lineno="205"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>InvalidArgument(</highlight><highlight class="stringliteral">&quot;Cannot<sp/>cache<sp/>manifests:<sp/>FileIO<sp/>is<sp/>null&quot;</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="206"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="207"><highlight class="normal"></highlight></codeline>
+<codeline lineno="208"><highlight class="normal"><sp/><sp/></highlight><highlight class="comment">//<sp/>Read<sp/>manifest<sp/>list</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="209"><highlight class="normal"><sp/><sp/>ICEBERG_ASSIGN_OR_RAISE(</highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>reader,</highlight></codeline>
+<codeline lineno="210"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="classiceberg_1_1ManifestListReader_1afd7c22f9671a9f637058e16b1a2bba21" kindref="member">ManifestListReader::Make</ref>(snapshot-&gt;manifest_list,<sp/>file_io));</highlight></codeline>
+<codeline lineno="211"><highlight class="normal"><sp/><sp/>ICEBERG_ASSIGN_OR_RAISE(</highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>manifest_files,<sp/>reader-&gt;Files());</highlight></codeline>
+<codeline lineno="212"><highlight class="normal"></highlight></codeline>
+<codeline lineno="213"><highlight class="normal"><sp/><sp/>std::vector&lt;ManifestFile&gt;<sp/>manifests;</highlight></codeline>
+<codeline lineno="214"><highlight class="normal"><sp/><sp/>manifests.reserve(manifest_files.size());</highlight></codeline>
+<codeline lineno="215"><highlight class="normal"></highlight></codeline>
+<codeline lineno="216"><highlight class="normal"><sp/><sp/></highlight><highlight class="comment">//<sp/>Partition<sp/>manifests:<sp/>data<sp/>manifests<sp/>first,<sp/>then<sp/>delete<sp/>manifests</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="217"><highlight class="normal"><sp/><sp/></highlight><highlight class="comment">//<sp/>First<sp/>pass:<sp/>collect<sp/>data<sp/>manifests</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="218"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">for</highlight><highlight class="normal"><sp/>(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>manifest_file<sp/>:<sp/>manifest_files)<sp/>{</highlight></codeline>
+<codeline lineno="219"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(manifest_file.content<sp/>==<sp/>ManifestContent::kData)<sp/>{</highlight></codeline>
+<codeline lineno="220"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>manifests.push_back(manifest_file);</highlight></codeline>
+<codeline lineno="221"><highlight class="normal"><sp/><sp/><sp/><sp/>}</highlight></codeline>
+<codeline lineno="222"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="223"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordtype">size_t</highlight><highlight class="normal"><sp/>data_manifests_count<sp/>=<sp/>manifests.size();</highlight></codeline>
+<codeline lineno="224"><highlight class="normal"></highlight></codeline>
+<codeline lineno="225"><highlight class="normal"><sp/><sp/></highlight><highlight class="comment">//<sp/>Second<sp/>pass:<sp/>append<sp/>delete<sp/>manifests</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="226"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">for</highlight><highlight class="normal"><sp/>(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>manifest_file<sp/>:<sp/>manifest_files)<sp/>{</highlight></codeline>
+<codeline lineno="227"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordflow">if</highlight><highlight class="normal"><sp/>(manifest_file.content<sp/>==<sp/>ManifestContent::kDeletes)<sp/>{</highlight></codeline>
+<codeline lineno="228"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/>manifests.push_back(manifest_file);</highlight></codeline>
+<codeline lineno="229"><highlight class="normal"><sp/><sp/><sp/><sp/>}</highlight></codeline>
+<codeline lineno="230"><highlight class="normal"><sp/><sp/>}</highlight></codeline>
+<codeline lineno="231"><highlight class="normal"></highlight></codeline>
+<codeline lineno="232"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::make_pair(std::move(manifests),<sp/>data_manifests_count);</highlight></codeline>
+<codeline lineno="233"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="234"><highlight class="normal"></highlight></codeline>
+<codeline lineno="235"><highlight class="normal">Result&lt;std::span&lt;ManifestFile&gt;&gt;<sp/><ref refid="classiceberg_1_1SnapshotCache_1a831934b6a12ce637f7aecd80b0c2fa8e" kindref="member">SnapshotCache::Manifests</ref>(</highlight></codeline>
+<codeline lineno="236"><highlight class="normal"><sp/><sp/><sp/><sp/>std::shared_ptr&lt;FileIO&gt;<sp/>file_io)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="237"><highlight class="normal"><sp/><sp/>ICEBERG_ASSIGN_OR_RAISE(</highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>cache_ref,<sp/>manifests_cache_.Get(snapshot_,<sp/>file_io));</highlight></codeline>
+<codeline lineno="238"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>cache<sp/>=<sp/>cache_ref.get();</highlight></codeline>
+<codeline lineno="239"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::span&lt;ManifestFile&gt;(cache.first.data(),<sp/>cache.first.size());</highlight></codeline>
+<codeline lineno="240"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="241"><highlight class="normal"></highlight></codeline>
+<codeline lineno="242"><highlight class="normal">Result&lt;std::span&lt;ManifestFile&gt;&gt;<sp/><ref refid="classiceberg_1_1SnapshotCache_1ae4cae94c907194ca293dc7dd0f554e95" kindref="member">SnapshotCache::DataManifests</ref>(</highlight></codeline>
+<codeline lineno="243"><highlight class="normal"><sp/><sp/><sp/><sp/>std::shared_ptr&lt;FileIO&gt;<sp/>file_io)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="244"><highlight class="normal"><sp/><sp/>ICEBERG_ASSIGN_OR_RAISE(</highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>cache_ref,<sp/>manifests_cache_.Get(snapshot_,<sp/>file_io));</highlight></codeline>
+<codeline lineno="245"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>cache<sp/>=<sp/>cache_ref.get();</highlight></codeline>
+<codeline lineno="246"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::span&lt;ManifestFile&gt;(cache.first.data(),<sp/>cache.second);</highlight></codeline>
+<codeline lineno="247"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="248"><highlight class="normal"></highlight></codeline>
+<codeline lineno="249"><highlight class="normal">Result&lt;std::span&lt;ManifestFile&gt;&gt;<sp/><ref refid="classiceberg_1_1SnapshotCache_1aac4d585d74577958db24c559e421a450" kindref="member">SnapshotCache::DeleteManifests</ref>(</highlight></codeline>
+<codeline lineno="250"><highlight class="normal"><sp/><sp/><sp/><sp/>std::shared_ptr&lt;FileIO&gt;<sp/>file_io)</highlight><highlight class="keyword"><sp/>const<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="251"><highlight class="normal"><sp/><sp/>ICEBERG_ASSIGN_OR_RAISE(</highlight><highlight class="keyword">auto</highlight><highlight class="normal"><sp/>cache_ref,<sp/>manifests_cache_.Get(snapshot_,<sp/>file_io));</highlight></codeline>
+<codeline lineno="252"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">auto</highlight><highlight class="normal">&amp;<sp/>cache<sp/>=<sp/>cache_ref.get();</highlight></codeline>
+<codeline lineno="253"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keywordtype">size_t</highlight><highlight class="normal"><sp/>delete_start<sp/>=<sp/>cache.second;</highlight></codeline>
+<codeline lineno="254"><highlight class="normal"><sp/><sp/></highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/></highlight><highlight class="keywordtype">size_t</highlight><highlight class="normal"><sp/>delete_count<sp/>=<sp/>cache.first.size()<sp/>-<sp/>delete_start;</highlight></codeline>
+<codeline lineno="255"><highlight class="normal"><sp/><sp/></highlight><highlight class="keywordflow">return</highlight><highlight class="normal"><sp/>std::span&lt;ManifestFile&gt;(cache.first.data()<sp/>+<sp/>delete_start,<sp/>delete_count);</highlight></codeline>
+<codeline lineno="256"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="257"><highlight class="normal"></highlight></codeline>
+<codeline lineno="258"><highlight class="normal">}<sp/><sp/></highlight><highlight class="comment">//<sp/>namespace<sp/>iceberg</highlight><highlight class="normal"></highlight></codeline>
+    </programlisting>
+    <location file="iceberg/snapshot.cc"/>
+  </compounddef>
+</doxygen>
