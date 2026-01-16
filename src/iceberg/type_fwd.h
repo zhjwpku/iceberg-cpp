@@ -187,13 +187,14 @@ class TableUpdateContext;
 class Transaction;
 
 /// \brief Update family.
+class ExpireSnapshots;
 class PendingUpdate;
 class SnapshotUpdate;
+class UpdateLocation;
 class UpdatePartitionSpec;
 class UpdateProperties;
 class UpdateSchema;
 class UpdateSortOrder;
-class ExpireSnapshots;
 
 /// ----------------------------------------------------------------------------
 /// TODO: Forward declarations below are not added yet.

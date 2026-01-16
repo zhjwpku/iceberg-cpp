@@ -17,8 +17,10 @@
 
 install_headers(
     [
+        'expire_snapshots.h',
         'pending_update.h',
         'snapshot_update.h',
+        'update_location.h',
         'update_partition_spec.h',
         'update_schema.h',
         'update_sort_order.h',

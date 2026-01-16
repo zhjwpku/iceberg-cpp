@@ -172,6 +172,7 @@ if(ICEBERG_BUILD_BUNDLE)
                    SOURCES
                    expire_snapshots_test.cc
                    transaction_test.cc
+                   update_location_test.cc
                    update_partition_spec_test.cc
                    update_properties_test.cc
                    update_schema_test.cc
