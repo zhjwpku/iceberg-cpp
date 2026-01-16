@@ -346,12 +346,39 @@ class ICEBERG_EXPORT UpdateSchema : public PendingUpdate {
                                   std::string_view name, bool is_optional,
                                   std::shared_ptr<Type> type, std::string_view doc);
 
+  /// \brief Internal implementation for updating column requirement (optional/required).
+  ///
+  /// \param name Name of the column to update.
+  /// \param is_optional Whether the column should be optional (true) or required (false).
+  /// \return Reference to this for method chaining.
+  UpdateSchema& UpdateColumnRequirementInternal(std::string_view name, bool is_optional);
+
   /// \brief Assign a new column ID and increment the counter.
   int32_t AssignNewColumnId();
 
   /// \brief Find a field by name using case-sensitive or case-insensitive search.
   Result<std::optional<std::reference_wrapper<const SchemaField>>> FindField(
       std::string_view name) const;
+
+  /// \brief Find a field for update operations, considering pending changes.
+  ///
+  /// This method checks both the original schema and pending updates/additions to
+  /// return the most current view of a field. Used by operations that need to work
+  /// with fields that may have been added or modified in the same transaction.
+  ///
+  /// \param name Name of the field to find.
+  /// \return The field if found in schema or pending changes, nullopt otherwise.
+  Result<std::optional<std::reference_wrapper<const SchemaField>>> FindFieldForUpdate(
+      std::string_view name) const;
+
+  /// \brief Normalize a field name based on case sensitivity setting.
+  ///
+  /// If case_sensitive_ is true, returns the name as-is.
+  /// If case_sensitive_ is false, returns the lowercase version of the name.
+  ///
+  /// \param name The field name to normalize.
+  /// \return The normalized field name.
+  std::string CaseSensitivityAwareName(std::string_view name) const;
 
   // Internal state
   std::shared_ptr<Schema> schema_;
