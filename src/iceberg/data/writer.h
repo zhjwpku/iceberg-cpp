@@ -34,36 +34,21 @@
 namespace iceberg {
 
 /// \brief Base interface for data file writers.
-///
-/// This interface defines the common operations for writing Iceberg data files,
-/// including data files, equality delete files, and position delete files.
-///
-/// Typical usage:
-/// 1. Create a writer instance (via concrete implementation)
-/// 2. Call Write() one or more times to write data
-/// 3. Call Close() to finalize the file
-/// 4. Call Metadata() to get file metadata (only valid after Close())
 class ICEBERG_EXPORT FileWriter {
  public:
   virtual ~FileWriter();
 
   /// \brief Write a batch of records.
-  ///
-  /// \param data Arrow array containing the records to write.
-  /// \return Status indicating success or failure.
+  /// \note The ownership of the ArrowArray will be transferred to the writer.
   virtual Status Write(ArrowArray* data) = 0;
 
   /// \brief Get the current number of bytes written.
-  ///
-  /// \return Result containing the number of bytes written or an error.
   virtual Result<int64_t> Length() const = 0;
 
   /// \brief Close the writer and finalize the file.
-  ///
-  /// \return Status indicating success or failure.
   virtual Status Close() = 0;
 
-  /// \brief File metadata for all files produced by the writer.
+  /// \brief File metadata for all files produced by this writer.
   struct ICEBERG_EXPORT WriteResult {
     /// Usually a writer produces a single data or delete file.
     /// Position delete writer may produce multiple file-scoped delete files.
@@ -72,11 +57,7 @@ class ICEBERG_EXPORT FileWriter {
   };
 
   /// \brief Get file metadata for all files produced by this writer.
-  ///
-  /// This method should be called after Close() to retrieve the metadata
-  /// for all files written by this writer.
-  ///
-  /// \return Result containing the write result or an error.
+  /// \note This method should be called after Close().
   virtual Result<WriteResult> Metadata() = 0;
 };
 

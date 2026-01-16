@@ -17,7 +17,28 @@
  * under the License.
  */
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "iceberg/data/position_delete_writer.h"
 
-namespace iceberg {}  // namespace iceberg
+namespace iceberg {
+
+class PositionDeleteWriter::Impl {
+ public:
+};
+
+PositionDeleteWriter::~PositionDeleteWriter() = default;
+
+Status PositionDeleteWriter::Write(ArrowArray* data) { return NotImplemented(""); }
+
+Status PositionDeleteWriter::WriteDelete(std::string_view file_path, int64_t pos) {
+  return NotImplemented("");
+}
+
+Result<int64_t> PositionDeleteWriter::Length() const { return NotImplemented(""); }
+
+Status PositionDeleteWriter::Close() { return NotImplemented(""); }
+
+Result<FileWriter::WriteResult> PositionDeleteWriter::Metadata() {
+  return NotImplemented("");
+}
+
+}  // namespace iceberg

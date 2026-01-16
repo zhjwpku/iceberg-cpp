@@ -17,7 +17,22 @@
  * under the License.
  */
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "iceberg/data/data_writer.h"
 
-namespace iceberg {}  // namespace iceberg
+namespace iceberg {
+
+class DataWriter::Impl {
+ public:
+};
+
+DataWriter::~DataWriter() = default;
+
+Status DataWriter::Write(ArrowArray* data) { return NotImplemented(""); }
+
+Result<int64_t> DataWriter::Length() const { return NotImplemented(""); }
+
+Status DataWriter::Close() { return NotImplemented(""); }
+
+Result<FileWriter::WriteResult> DataWriter::Metadata() { return NotImplemented(""); }
+
+}  // namespace iceberg

@@ -17,7 +17,26 @@
  * under the License.
  */
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "iceberg/data/equality_delete_writer.h"
 
-namespace iceberg {}  // namespace iceberg
+namespace iceberg {
+
+class EqualityDeleteWriter::Impl {
+ public:
+};
+
+EqualityDeleteWriter::~EqualityDeleteWriter() = default;
+
+Status EqualityDeleteWriter::Write(ArrowArray* data) { return NotImplemented(""); }
+
+Result<int64_t> EqualityDeleteWriter::Length() const { return NotImplemented(""); }
+
+Status EqualityDeleteWriter::Close() { return NotImplemented(""); }
+
+Result<FileWriter::WriteResult> EqualityDeleteWriter::Metadata() {
+  return NotImplemented("");
+}
+
+std::span<const int32_t> EqualityDeleteWriter::equality_field_ids() const { return {}; }
+
+}  // namespace iceberg
