@@ -17,28 +17,36 @@
  * under the License.
  */
 
-#pragma once
+#include "iceberg/catalog/rest/auth/auth_session.h"
 
-/// \file iceberg/catalog/rest/type_fwd.h
-/// Forward declarations and enum definitions for Iceberg REST API types.
-
-namespace iceberg::rest {
-
-struct ErrorResponse;
-struct LoadTableResult;
-
-class Endpoint;
-class ErrorHandler;
-class HttpClient;
-class ResourcePaths;
-class RestCatalog;
-class RestCatalogProperties;
-
-}  // namespace iceberg::rest
+#include <utility>
 
 namespace iceberg::rest::auth {
 
-class AuthManager;
-class AuthSession;
+namespace {
+
+/// \brief Default implementation that adds static headers to requests.
+class DefaultAuthSession : public AuthSession {
+ public:
+  explicit DefaultAuthSession(std::unordered_map<std::string, std::string> headers)
+      : headers_(std::move(headers)) {}
+
+  Status Authenticate(std::unordered_map<std::string, std::string>& headers) override {
+    for (const auto& [key, value] : headers_) {
+      headers.try_emplace(key, value);
+    }
+    return {};
+  }
+
+ private:
+  std::unordered_map<std::string, std::string> headers_;
+};
+
+}  // namespace
+
+std::shared_ptr<AuthSession> AuthSession::MakeDefault(
+    std::unordered_map<std::string, std::string> headers) {
+  return std::make_shared<DefaultAuthSession>(std::move(headers));
+}
 
 }  // namespace iceberg::rest::auth
