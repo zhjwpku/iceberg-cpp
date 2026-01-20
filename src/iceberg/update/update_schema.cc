@@ -52,8 +52,12 @@ class ApplyChangesVisitor {
   ApplyChangesVisitor(
       const std::unordered_set<int32_t>& deletes,
       const std::unordered_map<int32_t, std::shared_ptr<SchemaField>>& updates,
-      const std::unordered_map<int32_t, std::vector<int32_t>>& parent_to_added_ids)
-      : deletes_(deletes), updates_(updates), parent_to_added_ids_(parent_to_added_ids) {}
+      const std::unordered_map<int32_t, std::vector<int32_t>>& parent_to_added_ids,
+      const std::unordered_map<int32_t, std::vector<UpdateSchema::Move>>& moves)
+      : deletes_(deletes),
+        updates_(updates),
+        parent_to_added_ids_(parent_to_added_ids),
+        moves_(moves) {}
 
   /// \brief Apply changes to a type using schema visitor pattern
   Result<std::shared_ptr<Type>> ApplyChanges(const std::shared_ptr<Type>& type,
@@ -96,6 +100,12 @@ class ApplyChangesVisitor {
           new_fields.push_back(*added_field_it->second);
         }
       }
+    }
+
+    auto moves_it = moves_.find(parent_id);
+    if (moves_it != moves_.end() && !moves_it->second.empty()) {
+      has_changes = true;
+      new_fields = MoveFields(std::move(new_fields), moves_it->second);
     }
 
     if (!has_changes) {
@@ -205,10 +215,63 @@ class ApplyChangesVisitor {
     }
   }
 
+  /// \brief Helper function to apply move operations to a list of fields
+  static std::vector<SchemaField> MoveFields(
+      std::vector<SchemaField>&& fields, const std::vector<UpdateSchema::Move>& moves);
+
   const std::unordered_set<int32_t>& deletes_;
   const std::unordered_map<int32_t, std::shared_ptr<SchemaField>>& updates_;
   const std::unordered_map<int32_t, std::vector<int32_t>>& parent_to_added_ids_;
+  const std::unordered_map<int32_t, std::vector<UpdateSchema::Move>>& moves_;
 };
+
+std::vector<SchemaField> ApplyChangesVisitor::MoveFields(
+    std::vector<SchemaField>&& fields, const std::vector<UpdateSchema::Move>& moves) {
+  std::vector<SchemaField> reordered = std::move(fields);
+
+  for (const auto& move : moves) {
+    auto it = std::ranges::find_if(reordered, [&move](const SchemaField& field) {
+      return field.field_id() == move.field_id;
+    });
+
+    if (it == reordered.end()) {
+      continue;
+    }
+
+    SchemaField to_move = *it;
+    reordered.erase(it);
+
+    switch (move.type) {
+      case UpdateSchema::Move::MoveType::kFirst:
+        reordered.insert(reordered.begin(), std::move(to_move));
+        break;
+
+      case UpdateSchema::Move::MoveType::kBefore: {
+        auto before_it =
+            std::ranges::find_if(reordered, [&move](const SchemaField& field) {
+              return field.field_id() == move.reference_field_id;
+            });
+        if (before_it != reordered.end()) {
+          reordered.insert(before_it, std::move(to_move));
+        }
+        break;
+      }
+
+      case UpdateSchema::Move::MoveType::kAfter: {
+        auto after_it =
+            std::ranges::find_if(reordered, [&move](const SchemaField& field) {
+              return field.field_id() == move.reference_field_id;
+            });
+        if (after_it != reordered.end()) {
+          reordered.insert(after_it + 1, std::move(to_move));
+        }
+        break;
+      }
+    }
+  }
+
+  return reordered;
+}
 
 }  // namespace
 
@@ -243,6 +306,25 @@ UpdateSchema::UpdateSchema(std::shared_ptr<Transaction> transaction)
 }
 
 UpdateSchema::~UpdateSchema() = default;
+
+UpdateSchema::Move UpdateSchema::Move::First(int32_t field_id) {
+  return Move{
+      .field_id = field_id, .reference_field_id = kTableRootId, .type = MoveType::kFirst};
+}
+
+UpdateSchema::Move UpdateSchema::Move::Before(int32_t field_id,
+                                              int32_t reference_field_id) {
+  return Move{.field_id = field_id,
+              .reference_field_id = reference_field_id,
+              .type = MoveType::kBefore};
+}
+
+UpdateSchema::Move UpdateSchema::Move::After(int32_t field_id,
+                                             int32_t reference_field_id) {
+  return Move{.field_id = field_id,
+              .reference_field_id = reference_field_id,
+              .type = MoveType::kAfter};
+}
 
 UpdateSchema& UpdateSchema::AllowIncompatibleChanges() {
   allow_incompatible_changes_ = true;
@@ -421,23 +503,33 @@ UpdateSchema& UpdateSchema::DeleteColumn(std::string_view name) {
 }
 
 UpdateSchema& UpdateSchema::MoveFirst(std::string_view name) {
-  // TODO(Guotao Yu): Implement MoveFirst
-  AddError(NotImplemented("UpdateSchema::MoveFirst not implemented"));
-  return *this;
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto field_id, FindFieldIdForMove(name));
+
+  return MoveInternal(name, Move::First(field_id));
 }
 
 UpdateSchema& UpdateSchema::MoveBefore(std::string_view name,
                                        std::string_view before_name) {
-  // TODO(Guotao Yu): Implement MoveBefore
-  AddError(NotImplemented("UpdateSchema::MoveBefore not implemented"));
-  return *this;
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto field_id, FindFieldIdForMove(name));
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN_WITH_ERROR(
+      auto before_id, FindFieldIdForMove(before_name),
+      "Cannot move {} before missing column: {}", name, before_name);
+
+  ICEBERG_BUILDER_CHECK(field_id != before_id, "Cannot move {} before itself", name);
+
+  return MoveInternal(name, Move::Before(field_id, before_id));
 }
 
 UpdateSchema& UpdateSchema::MoveAfter(std::string_view name,
                                       std::string_view after_name) {
-  // TODO(Guotao Yu): Implement MoveAfter
-  AddError(NotImplemented("UpdateSchema::MoveAfter not implemented"));
-  return *this;
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto field_id, FindFieldIdForMove(name));
+  ICEBERG_BUILDER_ASSIGN_OR_RETURN_WITH_ERROR(
+      auto after_id, FindFieldIdForMove(after_name),
+      "Cannot move {} after missing column: {}", name, after_name);
+
+  ICEBERG_BUILDER_CHECK(field_id != after_id, "Cannot move {} after itself", name);
+
+  return MoveInternal(name, Move::After(field_id, after_id));
 }
 
 UpdateSchema& UpdateSchema::UnionByNameWith(std::shared_ptr<Schema> new_schema) {
@@ -478,7 +570,7 @@ Result<UpdateSchema::ApplyResult> UpdateSchema::Apply() {
     }
   }
 
-  ApplyChangesVisitor visitor(deletes_, updates_, parent_to_added_ids_);
+  ApplyChangesVisitor visitor(deletes_, updates_, parent_to_added_ids_, moves_);
   ICEBERG_ASSIGN_OR_RAISE(auto new_type, visitor.ApplyChanges(schema_, kTableRootId));
 
   auto new_struct_type = internal::checked_pointer_cast<StructType>(new_type);
@@ -627,6 +719,55 @@ std::string UpdateSchema::CaseSensitivityAwareName(std::string_view name) const 
     return std::string(name);
   }
   return StringUtils::ToLower(name);
+}
+
+Result<int32_t> UpdateSchema::FindFieldIdForMove(std::string_view name) const {
+  auto added_it = added_name_to_id_.find(CaseSensitivityAwareName(name));
+  if (added_it != added_name_to_id_.end()) {
+    return added_it->second;
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto field, FindField(name));
+  if (field.has_value()) {
+    return field->get().field_id();
+  }
+
+  return InvalidArgument("Cannot move missing column: {}", name);
+}
+
+UpdateSchema& UpdateSchema::MoveInternal(std::string_view name, const Move& move) {
+  auto parent_it = id_to_parent_.find(move.field_id);
+
+  if (parent_it != id_to_parent_.end()) {
+    int32_t parent_id = parent_it->second;
+    auto parent_field_result = schema_->FindFieldById(parent_id);
+
+    ICEBERG_BUILDER_CHECK(parent_field_result.has_value(),
+                          "Cannot find parent field with id: {}", parent_id);
+
+    const auto& parent_field = parent_field_result.value()->get();
+    ICEBERG_BUILDER_CHECK(parent_field.type()->type_id() == TypeId::kStruct,
+                          "Cannot move fields in non-struct type");
+
+    if (move.type == Move::MoveType::kBefore || move.type == Move::MoveType::kAfter) {
+      auto ref_parent_it = id_to_parent_.find(move.reference_field_id);
+      ICEBERG_BUILDER_CHECK(
+          ref_parent_it != id_to_parent_.end() && ref_parent_it->second == parent_id,
+          "Cannot move field {} to a different struct", name);
+    }
+
+    moves_[parent_id].push_back(move);
+  } else {
+    if (move.type == Move::MoveType::kBefore || move.type == Move::MoveType::kAfter) {
+      auto ref_parent_it = id_to_parent_.find(move.reference_field_id);
+      ICEBERG_BUILDER_CHECK(ref_parent_it == id_to_parent_.end(),
+                            "Cannot move field {} to a different struct", name);
+    }
+
+    moves_[kTableRootId].push_back(move);
+  }
+
+  return *this;
 }
 
 }  // namespace iceberg
