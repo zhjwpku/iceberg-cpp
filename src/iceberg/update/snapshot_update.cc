@@ -30,7 +30,6 @@
 #include "iceberg/manifest/manifest_writer.h"
 #include "iceberg/manifest/rolling_manifest_writer.h"
 #include "iceberg/partition_summary_internal.h"
-#include "iceberg/snapshot.h"
 #include "iceberg/table.h"
 #include "iceberg/transaction.h"
 #include "iceberg/util/macros.h"
@@ -166,10 +165,10 @@ SnapshotUpdate::SnapshotUpdate(std::shared_ptr<Transaction> transaction)
 
 // TODO(xxx): write manifests in parallel
 Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDataManifests(
-    const std::vector<std::shared_ptr<DataFile>>& data_files,
+    std::span<const std::shared_ptr<DataFile>> files,
     const std::shared_ptr<PartitionSpec>& spec,
     std::optional<int64_t> data_sequence_number) {
-  if (data_files.empty()) {
+  if (files.empty()) {
     return std::vector<ManifestFile>{};
   }
 
@@ -185,7 +184,7 @@ Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDataManifests(
       },
       target_manifest_size_bytes_);
 
-  for (const auto& file : data_files) {
+  for (const auto& file : files) {
     ICEBERG_RETURN_UNEXPECTED(rolling_writer.WriteAddedEntry(file, data_sequence_number));
   }
   ICEBERG_RETURN_UNEXPECTED(rolling_writer.Close());
@@ -194,9 +193,9 @@ Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDataManifests(
 
 // TODO(xxx): write manifests in parallel
 Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDeleteManifests(
-    const std::vector<std::shared_ptr<DataFile>>& delete_files,
+    std::span<const std::shared_ptr<DataFile>> files,
     const std::shared_ptr<PartitionSpec>& spec) {
-  if (delete_files.empty()) {
+  if (files.empty()) {
     return std::vector<ManifestFile>{};
   }
 
@@ -211,9 +210,9 @@ Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDeleteManifests(
       },
       target_manifest_size_bytes_);
 
-  for (const auto& file : delete_files) {
-    /// FIXME: Java impl wrap it with `PendingDeleteFile` and deals with
-    /// file->data_sequenece_number
+  for (const auto& file : files) {
+    // FIXME: Java impl wrap it with `PendingDeleteFile` and deals with
+    // file->data_sequence_number
     ICEBERG_RETURN_UNEXPECTED(rolling_writer.WriteAddedEntry(file));
   }
   ICEBERG_RETURN_UNEXPECTED(rolling_writer.Close());
