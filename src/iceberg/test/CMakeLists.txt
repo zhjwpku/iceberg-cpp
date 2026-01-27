@@ -182,6 +182,7 @@ if(ICEBERG_BUILD_BUNDLE)
                    transaction_test.cc
                    update_location_test.cc
                    update_partition_spec_test.cc
+                   update_partition_statistics_test.cc
                    update_properties_test.cc
                    update_schema_test.cc
                    update_sort_order_test.cc
