@@ -103,7 +103,7 @@ class TestManifestListVersions : public ::testing::Test {
                        std::chrono::system_clock::now().time_since_epoch().count());
   }
 
-  std::string WriteManifestList(int format_version, int64_t expected_next_row_id,
+  std::string WriteManifestList(int8_t format_version, int64_t expected_next_row_id,
                                 const std::vector<ManifestFile>& manifests) const {
     const std::string manifest_list_path = CreateManifestListPath();
     constexpr int64_t kParentSnapshotId = kSnapshotId - 1;
@@ -126,7 +126,7 @@ class TestManifestListVersions : public ::testing::Test {
     return manifest_list_path;
   }
 
-  ManifestFile WriteAndReadManifestList(int format_version) const {
+  ManifestFile WriteAndReadManifestList(int8_t format_version) const {
     return ReadManifestList(
         WriteManifestList(format_version, kSnapshotFirstRowId, {kTestManifest}));
   }
@@ -190,9 +190,9 @@ class TestManifestListVersions : public ::testing::Test {
 TEST_F(TestManifestListVersions, TestV1WriteDeleteManifest) {
   const std::string manifest_list_path = CreateManifestListPath();
 
-  ICEBERG_UNWRAP_OR_FAIL(auto writer,
-                         ManifestListWriter::MakeV1Writer(kSnapshotId, kSnapshotId - 1,
-                                                          manifest_list_path, file_io_));
+  ICEBERG_UNWRAP_OR_FAIL(auto writer, ManifestListWriter::MakeWriter(
+                                          /*format_version=*/1, kSnapshotId,
+                                          kSnapshotId - 1, manifest_list_path, file_io_));
   auto status = writer->Add(kDeleteManifest);
 
   EXPECT_THAT(status, IsError(ErrorKind::kInvalidManifestList));
@@ -224,7 +224,7 @@ TEST_F(TestManifestListVersions, TestV1Write) {
 }
 
 TEST_F(TestManifestListVersions, TestV2Write) {
-  auto manifest = WriteAndReadManifestList(2);
+  auto manifest = WriteAndReadManifestList(/*format_version=*/2);
 
   // V3 fields are not written and are defaulted
   EXPECT_FALSE(manifest.first_row_id.has_value());
@@ -299,7 +299,8 @@ TEST_F(TestManifestListVersions, TestV3WriteMixedRowIdAssignment) {
       kSnapshotFirstRowId + 2 * (kAddedRows + kExistingRows);
 
   auto manifest_list_path = WriteManifestList(
-      3, kExpectedNextRowId, {missing_first_row_id, kTestManifest, missing_first_row_id});
+      /*format_version=*/3, kExpectedNextRowId,
+      {missing_first_row_id, kTestManifest, missing_first_row_id});
 
   auto manifests = ReadAllManifests(manifest_list_path);
   EXPECT_EQ(manifests.size(), 3);
@@ -444,7 +445,7 @@ TEST_F(TestManifestListVersions, TestManifestsPartitionSummary) {
   };
 
   // Test for all format versions
-  for (int format_version = 1; format_version <= 3; ++format_version) {
+  for (int8_t format_version = 1; format_version <= 3; ++format_version) {
     int64_t expected_next_row_id = kSnapshotFirstRowId +
                                    manifest.added_rows_count.value() +
                                    manifest.existing_rows_count.value();

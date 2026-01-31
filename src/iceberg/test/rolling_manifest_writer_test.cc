@@ -86,7 +86,7 @@ static std::string CreateManifestPath() {
 
 }  // namespace
 
-class RollingManifestWriterTest : public ::testing::TestWithParam<int32_t> {
+class RollingManifestWriterTest : public ::testing::TestWithParam<int8_t> {
  protected:
   void SetUp() override {
     avro::RegisterAll();
@@ -106,7 +106,7 @@ class RollingManifestWriterTest : public ::testing::TestWithParam<int32_t> {
   }
 
   RollingManifestWriter::ManifestWriterFactory NewRollingWriteManifestFactory(
-      int32_t format_version) {
+      int8_t format_version) {
     return [this, format_version]() -> Result<std::unique_ptr<ManifestWriter>> {
       const std::string manifest_path = CreateManifestPath();
       return ManifestWriter::MakeWriter(format_version, kSnapshotId, manifest_path,
@@ -116,7 +116,7 @@ class RollingManifestWriterTest : public ::testing::TestWithParam<int32_t> {
   }
 
   RollingManifestWriter::ManifestWriterFactory NewRollingWriteDeleteManifestFactory(
-      int32_t format_version) {
+      int8_t format_version) {
     return [this, format_version]() -> Result<std::unique_ptr<ManifestWriter>> {
       const std::string manifest_path = CreateManifestPath();
       return ManifestWriter::MakeWriter(format_version, kSnapshotId, manifest_path,
@@ -155,7 +155,7 @@ class RollingManifestWriterTest : public ::testing::TestWithParam<int32_t> {
 };
 
 TEST_P(RollingManifestWriterTest, TestRollingManifestWriterNoRecords) {
-  int32_t format_version = GetParam();
+  auto format_version = GetParam();
   RollingManifestWriter writer(NewRollingWriteManifestFactory(format_version),
                                kSmallFileSize);
 
@@ -170,7 +170,7 @@ TEST_P(RollingManifestWriterTest, TestRollingManifestWriterNoRecords) {
 }
 
 TEST_P(RollingManifestWriterTest, TestRollingDeleteManifestWriterNoRecords) {
-  int32_t format_version = GetParam();
+  auto format_version = GetParam();
   if (format_version < 2) {
     GTEST_SKIP() << "Delete manifests only supported in V2+";
   }
@@ -188,7 +188,7 @@ TEST_P(RollingManifestWriterTest, TestRollingDeleteManifestWriterNoRecords) {
 }
 
 TEST_P(RollingManifestWriterTest, TestRollingManifestWriterSplitFiles) {
-  int32_t format_version = GetParam();
+  auto format_version = GetParam();
   RollingManifestWriter writer(NewRollingWriteManifestFactory(format_version),
                                kSmallFileSize);
 
@@ -239,7 +239,7 @@ TEST_P(RollingManifestWriterTest, TestRollingManifestWriterSplitFiles) {
 }
 
 TEST_P(RollingManifestWriterTest, TestRollingDeleteManifestWriterSplitFiles) {
-  int32_t format_version = GetParam();
+  auto format_version = GetParam();
   if (format_version < 2) {
     GTEST_SKIP() << "Delete manifests only supported in V2+";
   }

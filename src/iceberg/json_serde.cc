@@ -26,6 +26,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "iceberg/constants.h"
 #include "iceberg/json_serde_internal.h"
 #include "iceberg/name_mapping.h"
 #include "iceberg/partition_field.h"

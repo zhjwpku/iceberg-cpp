@@ -32,7 +32,6 @@
 #include "iceberg/table_metadata.h"
 #include "iceberg/transaction.h"
 #include "iceberg/transform.h"
-#include "iceberg/util/checked_cast.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
