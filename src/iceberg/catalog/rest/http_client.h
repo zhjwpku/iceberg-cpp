@@ -82,30 +82,33 @@ class ICEBERG_REST_EXPORT HttpClient {
   Result<HttpResponse> Get(const std::string& path,
                            const std::unordered_map<std::string, std::string>& params,
                            const std::unordered_map<std::string, std::string>& headers,
-                           const ErrorHandler& error_handler);
+                           const ErrorHandler& error_handler, auth::AuthSession& session);
 
   /// \brief Sends a POST request.
   Result<HttpResponse> Post(const std::string& path, const std::string& body,
                             const std::unordered_map<std::string, std::string>& headers,
-                            const ErrorHandler& error_handler);
+                            const ErrorHandler& error_handler,
+                            auth::AuthSession& session);
 
   /// \brief Sends a POST request with form data.
   Result<HttpResponse> PostForm(
       const std::string& path,
       const std::unordered_map<std::string, std::string>& form_data,
       const std::unordered_map<std::string, std::string>& headers,
-      const ErrorHandler& error_handler);
+      const ErrorHandler& error_handler, auth::AuthSession& session);
 
   /// \brief Sends a HEAD request.
   Result<HttpResponse> Head(const std::string& path,
                             const std::unordered_map<std::string, std::string>& headers,
-                            const ErrorHandler& error_handler);
+                            const ErrorHandler& error_handler,
+                            auth::AuthSession& session);
 
   /// \brief Sends a DELETE request.
   Result<HttpResponse> Delete(const std::string& path,
                               const std::unordered_map<std::string, std::string>& params,
                               const std::unordered_map<std::string, std::string>& headers,
-                              const ErrorHandler& error_handler);
+                              const ErrorHandler& error_handler,
+                              auth::AuthSession& session);
 
  private:
   std::unordered_map<std::string, std::string> default_headers_;
