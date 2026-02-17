@@ -71,6 +71,7 @@ jobs:
       - archive
     runs-on: ${{ matrix.os }}
     strategy:
+      max-parallel: 15
       fail-fast: false
       matrix:
         os:
