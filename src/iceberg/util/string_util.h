@@ -20,12 +20,14 @@
 #pragma once
 
 #include <algorithm>
+#include <cerrno>
 #include <charconv>
+#include <cstdlib>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <typeinfo>
-#include <utility>
 
 #include "iceberg/iceberg_export.h"
 #include "iceberg/result.h"
@@ -71,19 +73,56 @@ class ICEBERG_EXPORT StringUtils {
     requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
   static Result<T> ParseNumber(std::string_view str) {
     T value = 0;
-    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
-    if (ec == std::errc()) [[likely]] {
-      return value;
-    }
-    if (ec == std::errc::invalid_argument) {
+    if constexpr (std::is_integral_v<T>) {
+      auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
+      if (ec == std::errc() && ptr == str.data() + str.size()) [[likely]] {
+        return value;
+      }
+      if (ec == std::errc::result_out_of_range) {
+        return InvalidArgument("Failed to parse {} from string '{}': value out of range",
+                               typeid(T).name(), str);
+      }
       return InvalidArgument("Failed to parse {} from string '{}': invalid argument",
                              typeid(T).name(), str);
-    }
-    if (ec == std::errc::result_out_of_range) {
-      return InvalidArgument("Failed to parse {} from string '{}': value out of range",
+    } else {
+// libc++ 20+ provides floating-point std::from_chars. Use fallback for older libc++
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION >= 200000
+      auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
+      if (ec == std::errc() && ptr == str.data() + str.size()) [[likely]] {
+        return value;
+      }
+      if (ec == std::errc::result_out_of_range) {
+        return InvalidArgument("Failed to parse {} from string '{}': value out of range",
+                               typeid(T).name(), str);
+      }
+      return InvalidArgument("Failed to parse {} from string '{}': invalid argument",
                              typeid(T).name(), str);
+#else
+      // strto* require null-terminated input; string_view does not guarantee it.
+      std::string owned(str);
+      const char* start = owned.c_str();
+      char* end = nullptr;
+      errno = 0;
+
+      if constexpr (std::same_as<T, float>) {
+        value = std::strtof(start, &end);
+      } else if constexpr (std::same_as<T, double>) {
+        value = std::strtod(start, &end);
+      } else {
+        value = std::strtold(start, &end);
+      }
+
+      if (end == start || end != start + static_cast<std::ptrdiff_t>(owned.size())) {
+        return InvalidArgument("Failed to parse {} from string '{}': invalid argument",
+                               typeid(T).name(), str);
+      }
+      if (errno == ERANGE) {
+        return InvalidArgument("Failed to parse {} from string '{}': value out of range",
+                               typeid(T).name(), str);
+      }
+      return value;
+#endif
     }
-    std::unreachable();
   }
 };
 
