@@ -211,9 +211,32 @@ Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDeleteManifests(
       target_manifest_size_bytes_);
 
   for (const auto& file : files) {
-    // FIXME: Java impl wrap it with `PendingDeleteFile` and deals with
-    // file->data_sequence_number
     ICEBERG_RETURN_UNEXPECTED(rolling_writer.WriteAddedEntry(file));
+  }
+  ICEBERG_RETURN_UNEXPECTED(rolling_writer.Close());
+  return rolling_writer.ToManifestFiles();
+}
+
+Result<std::vector<ManifestFile>> SnapshotUpdate::WriteDeleteManifests(
+    std::span<const std::pair<std::shared_ptr<DataFile>, std::optional<int64_t>>> files,
+    const std::shared_ptr<PartitionSpec>& spec) {
+  if (files.empty()) {
+    return std::vector<ManifestFile>{};
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto current_schema, base().Schema());
+  RollingManifestWriter rolling_writer(
+      [this, spec, schema = std::move(current_schema),
+       snapshot_id = SnapshotId()]() -> Result<std::unique_ptr<ManifestWriter>> {
+        return ManifestWriter::MakeWriter(base().format_version, snapshot_id,
+                                          ManifestPath(), transaction_->table()->io(),
+                                          std::move(spec), std::move(schema),
+                                          ManifestContent::kDeletes);
+      },
+      target_manifest_size_bytes_);
+
+  for (const auto& [file, data_sequence_number] : files) {
+    ICEBERG_RETURN_UNEXPECTED(rolling_writer.WriteAddedEntry(file, data_sequence_number));
   }
   ICEBERG_RETURN_UNEXPECTED(rolling_writer.Close());
   return rolling_writer.ToManifestFiles();

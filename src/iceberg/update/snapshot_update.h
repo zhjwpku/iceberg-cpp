@@ -143,6 +143,16 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
       std::span<const std::shared_ptr<DataFile>> files,
       const std::shared_ptr<PartitionSpec>& spec);
 
+  /// \brief Write delete manifests for the given delete files with per-file
+  /// data sequence numbers.
+  ///
+  /// \param files Pairs of (delete file, optional data sequence number)
+  /// \param spec The partition spec to use
+  /// \return A vector of manifest files
+  Result<std::vector<ManifestFile>> WriteDeleteManifests(
+      std::span<const std::pair<std::shared_ptr<DataFile>, std::optional<int64_t>>> files,
+      const std::shared_ptr<PartitionSpec>& spec);
+
   const std::string& target_branch() const { return target_branch_; }
   bool can_inherit_snapshot_id() const { return can_inherit_snapshot_id_; }
   const std::string& commit_uuid() const { return commit_uuid_; }
