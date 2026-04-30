@@ -276,6 +276,8 @@ Status ValidateScalarAgainstType(const Scalar& scalar, const Type& type) {
     case TypeId::kTime:
     case TypeId::kTimestamp:
     case TypeId::kTimestampTz:
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs:
       ICEBERG_PRECHECK(std::holds_alternative<int64_t>(scalar), "Expected {} but got {}",
                        type.ToString(), ScalarTypeName(scalar));
       return {};
@@ -293,6 +295,9 @@ Status ValidateScalarAgainstType(const Scalar& scalar, const Type& type) {
       return {};
     case TypeId::kString:
     case TypeId::kBinary:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography:
       ICEBERG_PRECHECK(std::holds_alternative<std::string_view>(scalar),
                        "Expected {} but got {}", type.ToString(), ScalarTypeName(scalar));
       return {};
@@ -338,6 +343,8 @@ Status ValidateScalarAgainstType(const Scalar& scalar, const Type& type) {
       return ValidateMapLikeAgainstType(*map,
                                         internal::checked_cast<const MapType&>(type));
     }
+    case TypeId::kUnknown:
+      return InvalidArgument("Columns of type unknown cannot hold non-null values");
   }
 
   std::unreachable();

@@ -465,6 +465,119 @@ class ICEBERG_EXPORT UuidType : public PrimitiveType {
   bool Equals(const Type& other) const override;
 };
 
+/// \brief Iceberg v3 placeholder type when a concrete type is not known (optional only).
+class ICEBERG_EXPORT UnknownType : public PrimitiveType {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kUnknown;
+
+  UnknownType() = default;
+  ~UnknownType() override = default;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+};
+
+/// \brief Iceberg v3 semi-structured variant (column values use Parquet variant
+/// encoding).
+class ICEBERG_EXPORT VariantType : public PrimitiveType {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kVariant;
+
+  VariantType() = default;
+  ~VariantType() override = default;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+};
+
+/// \brief Nanosecond-precision timestamp without time zone.
+class ICEBERG_EXPORT TimestampNsType : public TimestampBase {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kTimestampNs;
+
+  TimestampNsType() = default;
+  ~TimestampNsType() override = default;
+
+  bool is_zoned() const override;
+  TimeUnit time_unit() const override;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+};
+
+/// \brief Nanosecond-precision timestamp with time zone (stored as UTC).
+class ICEBERG_EXPORT TimestampTzNsType : public TimestampBase {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kTimestampTzNs;
+
+  TimestampTzNsType() = default;
+  ~TimestampTzNsType() override = default;
+
+  bool is_zoned() const override;
+  TimeUnit time_unit() const override;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+};
+
+/// \brief Iceberg v3 geometry type (planar / Cartesian semantics). Parameter \p crs
+/// follows the Iceberg spec (default \p OGC:CRS84).
+class ICEBERG_EXPORT GeometryType : public PrimitiveType {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kGeometry;
+  static constexpr std::string_view kDefaultCrs = "OGC:CRS84";
+
+  explicit GeometryType(std::string crs);
+  ~GeometryType() override = default;
+
+  [[nodiscard]] const std::string& crs() const;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+
+ private:
+  std::string crs_;
+};
+
+/// \brief Iceberg v3 geography type (spherical semantics). Defaults match the spec.
+class ICEBERG_EXPORT GeographyType : public PrimitiveType {
+ public:
+  constexpr static const TypeId kTypeId = TypeId::kGeography;
+  static constexpr std::string_view kDefaultCrs = "OGC:CRS84";
+  static constexpr std::string_view kDefaultEdgeAlgorithm = "spherical";
+
+  GeographyType(std::string crs, std::string edge_algorithm);
+  ~GeographyType() override = default;
+
+  [[nodiscard]] const std::string& crs() const;
+  [[nodiscard]] const std::string& edge_algorithm() const;
+
+  TypeId type_id() const override;
+  std::string ToString() const override;
+
+ protected:
+  bool Equals(const Type& other) const override;
+
+ private:
+  std::string crs_;
+  std::string edge_algorithm_;
+};
+
 /// @}
 
 /// \defgroup type-factories Factory functions for creating primitive data types
@@ -490,6 +603,14 @@ ICEBERG_EXPORT const std::shared_ptr<TimeType>& time();
 ICEBERG_EXPORT const std::shared_ptr<TimestampType>& timestamp();
 /// \brief Return a TimestampTzType instance.
 ICEBERG_EXPORT const std::shared_ptr<TimestampTzType>& timestamp_tz();
+/// \brief Return a TimestampNsType instance (Iceberg v3).
+ICEBERG_EXPORT const std::shared_ptr<TimestampNsType>& timestamp_ns();
+/// \brief Return a TimestampTzNsType instance (Iceberg v3).
+ICEBERG_EXPORT const std::shared_ptr<TimestampTzNsType>& timestamptz_ns();
+/// \brief Return an UnknownType instance (Iceberg v3).
+ICEBERG_EXPORT const std::shared_ptr<UnknownType>& unknown();
+/// \brief Return a VariantType instance (Iceberg v3).
+ICEBERG_EXPORT const std::shared_ptr<VariantType>& variant();
 /// \brief Return a BinaryType instance.
 ICEBERG_EXPORT const std::shared_ptr<BinaryType>& binary();
 /// \brief Return a StringType instance.
@@ -507,6 +628,15 @@ ICEBERG_EXPORT std::shared_ptr<DecimalType> decimal(int32_t precision, int32_t s
 /// \param length The number of bytes to store (must be >= 0).
 /// \return A shared pointer to the FixedType instance.
 ICEBERG_EXPORT std::shared_ptr<FixedType> fixed(int32_t length);
+
+/// \brief Create a GeometryType with CRS \p crs (empty uses \p
+/// GeometryType::kDefaultCrs).
+ICEBERG_EXPORT std::shared_ptr<GeometryType> geometry(std::string crs = "");
+
+/// \brief Create a GeographyType with CRS and edge-interpolation algorithm (defaults per
+/// Iceberg v3).
+ICEBERG_EXPORT std::shared_ptr<GeographyType> geography(std::string crs = "",
+                                                        std::string edge_algorithm = "");
 
 /// \brief Create a StructType with the given fields.
 /// \param fields The fields of the struct.

@@ -150,6 +150,10 @@ Result<Literal> LiteralCaster::CastFromLong(
       return Literal::Timestamp(long_val);
     case TypeId::kTimestampTz:
       return Literal::TimestampTz(long_val);
+    case TypeId::kTimestampNs:
+      return Literal::TimestampNs(long_val);
+    case TypeId::kTimestampTzNs:
+      return Literal::TimestampTzNs(long_val);
     default:
       return NotSupported("Cast from Long to {} is not supported",
                           target_type->ToString());
@@ -329,6 +333,26 @@ Literal Literal::Timestamp(int64_t value) { return {Value{value}, timestamp()}; 
 
 Literal Literal::TimestampTz(int64_t value) { return {Value{value}, timestamp_tz()}; }
 
+Literal Literal::TimestampNs(int64_t value) { return {Value{value}, timestamp_ns()}; }
+
+Literal Literal::TimestampTzNs(int64_t value) { return {Value{value}, timestamptz_ns()}; }
+
+Literal Literal::Variant(std::vector<uint8_t> value) {
+  return {Value{std::move(value)}, variant()};
+}
+
+Literal Literal::GeometryValue(std::vector<uint8_t> value,
+                               std::shared_ptr<GeometryType> type) {
+  return {Value{std::move(value)},
+          std::static_pointer_cast<PrimitiveType>(std::move(type))};
+}
+
+Literal Literal::GeographyValue(std::vector<uint8_t> value,
+                                std::shared_ptr<GeographyType> type) {
+  return {Value{std::move(value)},
+          std::static_pointer_cast<PrimitiveType>(std::move(type))};
+}
+
 Literal Literal::Float(float value) { return {Value{value}, float32()}; }
 
 Literal Literal::Double(double value) { return {Value{value}, float64()}; }
@@ -395,8 +419,11 @@ bool Comparable(TypeId lhs, TypeId rhs) {
     case TypeId::kLong:
     case TypeId::kTimestamp:
     case TypeId::kTimestampTz:
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs:
       return rhs == TypeId::kLong || rhs == TypeId::kTimestamp ||
-             rhs == TypeId::kTimestampTz;
+             rhs == TypeId::kTimestampTz || rhs == TypeId::kTimestampNs ||
+             rhs == TypeId::kTimestampTzNs;
     default:
       return lhs == rhs;
   }
@@ -439,7 +466,9 @@ std::partial_ordering Literal::operator<=>(const Literal& other) const {
     case TypeId::kLong:
     case TypeId::kTime:
     case TypeId::kTimestamp:
-    case TypeId::kTimestampTz: {
+    case TypeId::kTimestampTz:
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs: {
       auto this_val = std::get<int64_t>(value_);
       auto other_val = std::get<int64_t>(other.value_);
       return this_val <=> other_val;
@@ -484,7 +513,10 @@ std::partial_ordering Literal::operator<=>(const Literal& other) const {
     }
 
     case TypeId::kBinary:
-    case TypeId::kFixed: {
+    case TypeId::kFixed:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography: {
       auto& this_val = std::get<std::vector<uint8_t>>(value_);
       auto& other_val = std::get<std::vector<uint8_t>>(other.value_);
       return this_val <=> other_val;
@@ -536,7 +568,10 @@ std::string Literal::ToString() const {
       return std::get<Uuid>(value_).ToString();
     }
     case TypeId::kBinary:
-    case TypeId::kFixed: {
+    case TypeId::kFixed:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography: {
       const auto& binary_data = std::get<std::vector<uint8_t>>(value_);
       std::string result = "X'";
       result.reserve(/*prefix*/ 2 + /*suffix*/ 1 + /*data*/ binary_data.size() * 2);
@@ -548,7 +583,9 @@ std::string Literal::ToString() const {
     }
     case TypeId::kTime:
     case TypeId::kTimestamp:
-    case TypeId::kTimestampTz: {
+    case TypeId::kTimestampTz:
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs: {
       return std::to_string(std::get<int64_t>(value_));
     }
     case TypeId::kDate: {
@@ -613,6 +650,9 @@ Result<Literal> LiteralCaster::CastTo(const Literal& literal,
       return CastFromTimestamp(literal, target_type);
     case TypeId::kTimestampTz:
       return CastFromTimestampTz(literal, target_type);
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs:
+      return CastFromLong(literal, target_type);
     default:
       break;
   }

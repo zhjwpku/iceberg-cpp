@@ -77,7 +77,10 @@ struct ICEBERG_EXPORT TableMetadata {
   static constexpr int64_t kInitialSequenceNumber = 0;
   static constexpr int64_t kInitialRowId = 0;
 
-  static inline const std::unordered_map<TypeId, int8_t> kMinFormatVersions = {};
+  static inline const std::unordered_map<TypeId, int8_t> kMinFormatVersions = {
+      {TypeId::kUnknown, 3},       {TypeId::kVariant, 3},  {TypeId::kTimestampNs, 3},
+      {TypeId::kTimestampTzNs, 3}, {TypeId::kGeometry, 3}, {TypeId::kGeography, 3},
+  };
 
   /// An integer version number for the format
   int8_t format_version;

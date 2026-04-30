@@ -222,8 +222,16 @@ Status ManifestEntryAdapter::AppendPartitionValues(
       case TypeId::kTime:
       case TypeId::kTimestamp:
       case TypeId::kTimestampTz:
+      case TypeId::kTimestampNs:
+      case TypeId::kTimestampTzNs:
         ICEBERG_RETURN_UNEXPECTED(
             AppendField(child_array, std::get<int64_t>(partition_value.value())));
+        break;
+      case TypeId::kVariant:
+      case TypeId::kGeometry:
+      case TypeId::kGeography:
+        ICEBERG_RETURN_UNEXPECTED(AppendField(
+            child_array, std::get<std::vector<uint8_t>>(partition_value.value())));
         break;
       case TypeId::kDecimal:
         ICEBERG_RETURN_UNEXPECTED(AppendField(

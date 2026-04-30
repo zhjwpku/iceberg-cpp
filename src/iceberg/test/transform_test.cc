@@ -873,6 +873,12 @@ TEST(TransformCanTransformTest, CanTransform) {
       {.transform_str = "bucket[16]", .source_type = iceberg::int32(), .expected = true},
       {.transform_str = "bucket[16]", .source_type = iceberg::string(), .expected = true},
       {.transform_str = "bucket[16]",
+       .source_type = iceberg::timestamp_ns(),
+       .expected = true},
+      {.transform_str = "bucket[16]",
+       .source_type = iceberg::timestamptz_ns(),
+       .expected = true},
+      {.transform_str = "bucket[16]",
        .source_type = iceberg::float32(),
        .expected = false},
 
@@ -890,21 +896,36 @@ TEST(TransformCanTransformTest, CanTransform) {
       // Year can transform date and timestamp types
       {.transform_str = "year", .source_type = iceberg::date(), .expected = true},
       {.transform_str = "year", .source_type = iceberg::timestamp(), .expected = true},
+      {.transform_str = "year", .source_type = iceberg::timestamp_ns(), .expected = true},
+      {.transform_str = "year",
+       .source_type = iceberg::timestamptz_ns(),
+       .expected = true},
       {.transform_str = "year", .source_type = iceberg::string(), .expected = false},
 
       // Month can transform date and timestamp types
       {.transform_str = "month", .source_type = iceberg::date(), .expected = true},
       {.transform_str = "month", .source_type = iceberg::timestamp(), .expected = true},
+      {.transform_str = "month",
+       .source_type = iceberg::timestamp_ns(),
+       .expected = true},
       {.transform_str = "month", .source_type = iceberg::binary(), .expected = false},
 
       // Day can transform date and timestamp types
       {.transform_str = "day", .source_type = iceberg::date(), .expected = true},
       {.transform_str = "day", .source_type = iceberg::timestamp(), .expected = true},
+      {.transform_str = "day", .source_type = iceberg::timestamp_ns(), .expected = true},
+      {.transform_str = "day",
+       .source_type = iceberg::timestamptz_ns(),
+       .expected = true},
       {.transform_str = "day", .source_type = iceberg::uuid(), .expected = false},
 
       // Hour can transform timestamp types
       {.transform_str = "hour", .source_type = iceberg::timestamp(), .expected = true},
       {.transform_str = "hour", .source_type = iceberg::timestamp_tz(), .expected = true},
+      {.transform_str = "hour", .source_type = iceberg::timestamp_ns(), .expected = true},
+      {.transform_str = "hour",
+       .source_type = iceberg::timestamptz_ns(),
+       .expected = true},
       {.transform_str = "hour", .source_type = iceberg::int32(), .expected = false},
   };
 

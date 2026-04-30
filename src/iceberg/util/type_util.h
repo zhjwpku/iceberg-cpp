@@ -38,6 +38,8 @@
 
 namespace iceberg {
 
+class Transform;
+
 /// \brief Visitor for building a map from field ID to SchemaField reference.
 class IdToFieldVisitor {
  public:
@@ -186,5 +188,15 @@ ICEBERG_EXPORT Result<std::shared_ptr<Schema>> AssignFreshIds(
 /// \return true if promotion is allowed, false otherwise
 ICEBERG_EXPORT bool IsPromotionAllowed(const std::shared_ptr<Type>& from_type,
                                        const std::shared_ptr<Type>& to_type);
+
+/// \brief Whether a type promotion is compatible with partition or sort transforms on
+/// the same source column after evolution.
+///
+/// This is narrower than IsPromotionAllowed: some promotions are forbidden when a
+/// transform (especially bucket vs date-to-timestamp) would change partitioning behavior.
+/// Identity transforms disallow arbitrary widening promotions (except unknown→primitive).
+ICEBERG_EXPORT bool IsPromotionCompatibleWithTransform(
+    const std::shared_ptr<Type>& from_type, const std::shared_ptr<Type>& to_type,
+    const Transform& transform);
 
 }  // namespace iceberg

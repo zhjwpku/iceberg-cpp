@@ -180,24 +180,22 @@ class ICEBERG_EXPORT UpdateSchema : public PendingUpdate {
   ///       this change conflicts with other additions, renames, or updates.
   UpdateSchema& RenameColumn(std::string_view name, std::string_view new_name);
 
-  /// \brief Update a column in the schema to a new primitive type.
+  /// \brief Update a column type (primitive widening, unknown→primitive/nested in v3).
   ///
   /// The name is used to find the column to update using Schema::FindFieldByName().
   ///
-  /// Only updates that widen types are allowed.
+  /// Only type changes allowed by schema evolution rules are permitted; partition and
+  /// sort transforms on affected source columns must remain valid after Apply().
   ///
   /// Columns may be updated and renamed in the same schema update.
   ///
   /// \param name Name of the column to update.
-  /// \param new_type Replacement type for the column (must be primitive).
+  /// \param new_type Replacement logical type for the column.
   /// \return Reference to this for method chaining.
   /// \note InvalidArgument will be reported if name doesn't identify a column in the
-  /// schema or if
-  ///       this change introduces a type incompatibility or if it conflicts with
-  ///       other additions, renames, or updates.
-  UpdateSchema& UpdateColumn(std::string_view name,
-                             std::shared_ptr<PrimitiveType> new_type);
-
+  /// schema or if this change introduces a type incompatibility or conflicts with other
+  /// additions, renames, or updates.
+  UpdateSchema& UpdateColumn(std::string_view name, std::shared_ptr<Type> new_type);
   /// \brief Update the documentation string for a column.
   ///
   /// The name is used to find the column to update using Schema::FindFieldByName().

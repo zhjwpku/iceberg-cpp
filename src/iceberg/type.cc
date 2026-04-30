@@ -334,6 +334,89 @@ TypeId UuidType::type_id() const { return kTypeId; }
 std::string UuidType::ToString() const { return "uuid"; }
 bool UuidType::Equals(const Type& other) const { return other.type_id() == kTypeId; }
 
+TypeId UnknownType::type_id() const { return kTypeId; }
+std::string UnknownType::ToString() const { return "unknown"; }
+bool UnknownType::Equals(const Type& other) const { return other.type_id() == kTypeId; }
+
+TypeId VariantType::type_id() const { return kTypeId; }
+std::string VariantType::ToString() const { return "variant"; }
+bool VariantType::Equals(const Type& other) const { return other.type_id() == kTypeId; }
+
+bool TimestampNsType::is_zoned() const { return false; }
+TimeUnit TimestampNsType::time_unit() const { return TimeUnit::kNanosecond; }
+TypeId TimestampNsType::type_id() const { return kTypeId; }
+std::string TimestampNsType::ToString() const { return "timestamp_ns"; }
+bool TimestampNsType::Equals(const Type& other) const {
+  return other.type_id() == kTypeId;
+}
+
+bool TimestampTzNsType::is_zoned() const { return true; }
+TimeUnit TimestampTzNsType::time_unit() const { return TimeUnit::kNanosecond; }
+TypeId TimestampTzNsType::type_id() const { return kTypeId; }
+std::string TimestampTzNsType::ToString() const { return "timestamptz_ns"; }
+bool TimestampTzNsType::Equals(const Type& other) const {
+  return other.type_id() == kTypeId;
+}
+
+GeometryType::GeometryType(std::string crs) : crs_(std::move(crs)) {
+  if (crs_.empty()) {
+    crs_ = std::string(kDefaultCrs);
+  }
+}
+
+const std::string& GeometryType::crs() const { return crs_; }
+
+TypeId GeometryType::type_id() const { return kTypeId; }
+
+std::string GeometryType::ToString() const {
+  if (crs_ == kDefaultCrs) {
+    return "geometry";
+  }
+  return std::format("geometry({})", crs_);
+}
+
+bool GeometryType::Equals(const Type& other) const {
+  if (other.type_id() != kTypeId) {
+    return false;
+  }
+  const auto& geo = static_cast<const GeometryType&>(other);
+  return crs_ == geo.crs_;
+}
+
+GeographyType::GeographyType(std::string crs, std::string edge_algorithm)
+    : crs_(std::move(crs)), edge_algorithm_(std::move(edge_algorithm)) {
+  if (crs_.empty()) {
+    crs_ = std::string(kDefaultCrs);
+  }
+  if (edge_algorithm_.empty()) {
+    edge_algorithm_ = std::string(kDefaultEdgeAlgorithm);
+  }
+}
+
+const std::string& GeographyType::crs() const { return crs_; }
+
+const std::string& GeographyType::edge_algorithm() const { return edge_algorithm_; }
+
+TypeId GeographyType::type_id() const { return kTypeId; }
+
+std::string GeographyType::ToString() const {
+  if (crs_ == kDefaultCrs && edge_algorithm_ == kDefaultEdgeAlgorithm) {
+    return "geography";
+  }
+  if (edge_algorithm_ == kDefaultEdgeAlgorithm) {
+    return std::format("geography({})", crs_);
+  }
+  return std::format("geography({},{})", crs_, edge_algorithm_);
+}
+
+bool GeographyType::Equals(const Type& other) const {
+  if (other.type_id() != kTypeId) {
+    return false;
+  }
+  const auto& geo = static_cast<const GeographyType&>(other);
+  return crs_ == geo.crs_ && edge_algorithm_ == geo.edge_algorithm_;
+}
+
 FixedType::FixedType(int32_t length) : length_(length) {
   ICEBERG_CHECK_OR_DIE(length >= 0, "FixedType: length must be >= 0, was {}", length);
 }
@@ -374,8 +457,40 @@ TYPE_FACTORY(timestamp_tz, TimestampTzType)
 TYPE_FACTORY(binary, BinaryType)
 TYPE_FACTORY(string, StringType)
 TYPE_FACTORY(uuid, UuidType)
+TYPE_FACTORY(unknown, UnknownType)
+TYPE_FACTORY(variant, VariantType)
+TYPE_FACTORY(timestamp_ns, TimestampNsType)
+TYPE_FACTORY(timestamptz_ns, TimestampTzNsType)
 
 #undef TYPE_FACTORY
+
+std::shared_ptr<GeometryType> geometry(std::string crs) {
+  if (crs.empty() || crs == GeometryType::kDefaultCrs) {
+    static const auto kDefault =
+        std::make_shared<GeometryType>(std::string(GeometryType::kDefaultCrs));
+    return kDefault;
+  }
+  return std::make_shared<GeometryType>(std::move(crs));
+}
+
+std::shared_ptr<GeographyType> geography(std::string crs, std::string edge_algorithm) {
+  const bool crs_default = crs.empty() || crs == GeographyType::kDefaultCrs;
+  const bool algo_default =
+      edge_algorithm.empty() || edge_algorithm == GeographyType::kDefaultEdgeAlgorithm;
+  if (crs_default && algo_default) {
+    static const auto kDefault = std::make_shared<GeographyType>(
+        std::string(GeographyType::kDefaultCrs),
+        std::string(GeographyType::kDefaultEdgeAlgorithm));
+    return kDefault;
+  }
+  if (crs.empty()) {
+    crs = std::string(GeographyType::kDefaultCrs);
+  }
+  if (edge_algorithm.empty()) {
+    edge_algorithm = std::string(GeographyType::kDefaultEdgeAlgorithm);
+  }
+  return std::make_shared<GeographyType>(std::move(crs), std::move(edge_algorithm));
+}
 
 std::shared_ptr<DecimalType> decimal(int32_t precision, int32_t scale) {
   return std::make_shared<DecimalType>(precision, scale);
@@ -433,6 +548,18 @@ std::string_view ToString(TypeId id) {
       return "fixed";
     case TypeId::kBinary:
       return "binary";
+    case TypeId::kUnknown:
+      return "unknown";
+    case TypeId::kVariant:
+      return "variant";
+    case TypeId::kTimestampNs:
+      return "timestamp_ns";
+    case TypeId::kTimestampTzNs:
+      return "timestamptz_ns";
+    case TypeId::kGeometry:
+      return "geometry";
+    case TypeId::kGeography:
+      return "geography";
   }
 
   std::unreachable();

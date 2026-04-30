@@ -28,7 +28,9 @@
 #include "iceberg/schema.h"
 #include "iceberg/schema_field.h"
 #include "iceberg/test/matchers.h"
+#include "iceberg/transform.h"
 #include "iceberg/type.h"
+#include "iceberg/util/type_util.h"
 
 namespace iceberg {
 
@@ -453,4 +455,38 @@ TEST(SchemaUtilTest, ProjectIncompatibleNestedTypes) {
   ASSERT_THAT(projection_result, HasErrorMessage("but got list"));
 }
 
+TEST(SchemaUtilTest, TypePromotionUnknownToPrimitive) {
+  EXPECT_TRUE(IsPromotionAllowed(unknown(), int32()));
+  EXPECT_TRUE(IsPromotionAllowed(unknown(), variant()));
+  EXPECT_FALSE(IsPromotionAllowed(int32(), unknown()));
+}
+
+TEST(SchemaUtilTest, TypePromotionDateToTimestamp) {
+  EXPECT_TRUE(IsPromotionAllowed(date(), timestamp()));
+  EXPECT_TRUE(IsPromotionAllowed(date(), timestamp_ns()));
+  EXPECT_FALSE(IsPromotionAllowed(date(), timestamp_tz()));
+  EXPECT_FALSE(IsPromotionAllowed(date(), timestamptz_ns()));
+}
+
+TEST(SchemaUtilTest, TypePromotionUnknownToNested) {
+  auto nested = std::make_shared<StructType>(std::vector<SchemaField>{
+      SchemaField::MakeOptional(1, "x", int32()),
+  });
+  EXPECT_TRUE(IsPromotionAllowed(unknown(), nested));
+}
+
+TEST(SchemaUtilTest, TypePromotionCompatibleWithTransforms) {
+  EXPECT_TRUE(IsPromotionCompatibleWithTransform(date(), date(), *Transform::Identity()));
+  EXPECT_TRUE(
+      IsPromotionCompatibleWithTransform(date(), timestamp_ns(), *Transform::Day()));
+
+  EXPECT_FALSE(
+      IsPromotionCompatibleWithTransform(date(), timestamp_ns(), *Transform::Bucket(4)));
+
+  EXPECT_FALSE(
+      IsPromotionCompatibleWithTransform(int32(), int64(), *Transform::Identity()));
+
+  EXPECT_TRUE(
+      IsPromotionCompatibleWithTransform(unknown(), int64(), *Transform::Identity()));
+}
 }  // namespace iceberg

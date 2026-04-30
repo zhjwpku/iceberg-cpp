@@ -80,6 +80,19 @@ class ICEBERG_EXPORT Literal : public util::Formattable {
   static Literal Binary(std::vector<uint8_t> value);
   static Literal Fixed(std::vector<uint8_t> value);
 
+  /// \brief Create a timestamp (nanoseconds) literal (Iceberg v3).
+  static Literal TimestampNs(int64_t nanoseconds);
+  /// \brief Create a timestamptz (nanoseconds) literal (Iceberg v3).
+  static Literal TimestampTzNs(int64_t nanoseconds);
+  /// \brief Create a variant literal from encoded bytes (Iceberg v3).
+  static Literal Variant(std::vector<uint8_t> value);
+  /// \brief Create a geometry literal from encoded bytes (Iceberg v3).
+  static Literal GeometryValue(std::vector<uint8_t> value,
+                               std::shared_ptr<GeometryType> type);
+  /// \brief Create a geography literal from encoded bytes (Iceberg v3).
+  static Literal GeographyValue(std::vector<uint8_t> value,
+                                std::shared_ptr<GeographyType> type);
+
   /// \brief Create a decimal literal.
   /// \param value The unscaled 128-bit integer value.
   static Literal Decimal(int128_t value, int32_t precision, int32_t scale);
@@ -206,6 +219,11 @@ DEFINE_LITERAL_TRAIT(kString, std::string)
 DEFINE_LITERAL_TRAIT(kUuid, Uuid)
 DEFINE_LITERAL_TRAIT(kBinary, std::vector<uint8_t>)
 DEFINE_LITERAL_TRAIT(kFixed, std::vector<uint8_t>)
+DEFINE_LITERAL_TRAIT(kTimestampNs, int64_t)
+DEFINE_LITERAL_TRAIT(kTimestampTzNs, int64_t)
+DEFINE_LITERAL_TRAIT(kVariant, std::vector<uint8_t>)
+DEFINE_LITERAL_TRAIT(kGeometry, std::vector<uint8_t>)
+DEFINE_LITERAL_TRAIT(kGeography, std::vector<uint8_t>)
 
 #undef DEFINE_LITERAL_TRAIT
 

@@ -31,6 +31,7 @@
 #include <avro/Types.hh>
 
 #include "iceberg/arrow/arrow_status_internal.h"
+#include "iceberg/avro/avro_constants.h"
 #include "iceberg/avro/avro_data_util_internal.h"
 #include "iceberg/avro/avro_schema_util_internal.h"
 #include "iceberg/metadata_columns.h"
@@ -44,6 +45,14 @@ namespace iceberg::avro {
 using ::iceberg::arrow::ToErrorKind;
 
 namespace {
+
+std::string GetAdjustToUtcPropValue(const ::avro::NodePtr& node) {
+  if (node->customAttributes() == 0) {
+    return "false";
+  }
+  auto v = node->customAttributesAt(0).getAttribute(std::string(kAdjustToUtcProp));
+  return v.value_or("false");
+}
 
 /// \brief Forward declaration for mutual recursion.
 Status AppendFieldToBuilder(const ::avro::NodePtr& avro_node,
@@ -324,7 +333,11 @@ Status AppendPrimitiveValueToBuilder(const ::avro::NodePtr& avro_node,
       return {};
     }
 
-    case TypeId::kBinary: {
+    case TypeId::kBinary:
+    case TypeId::kUnknown:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography: {
       if (avro_node->type() != ::avro::AVRO_BYTES) {
         return InvalidArgument("Expected Avro bytes for binary field, got: {}",
                                ToString(avro_node));
@@ -418,12 +431,52 @@ Status AppendPrimitiveValueToBuilder(const ::avro::NodePtr& avro_node,
       return {};
     }
 
-    case TypeId::kTimestamp:
+    case TypeId::kTimestamp: {
+      if (avro_node->type() != ::avro::AVRO_LONG ||
+          avro_node->logicalType().type() != ::avro::LogicalType::TIMESTAMP_MICROS ||
+          GetAdjustToUtcPropValue(avro_node) != "false") {
+        return InvalidArgument(
+            "Expected Avro long with TIMESTAMP_MICROS and adjust-to-utc=false for "
+            "timestamp field, got: {}",
+            ToString(avro_node));
+      }
+      auto* builder = internal::checked_cast<::arrow::TimestampBuilder*>(array_builder);
+      ICEBERG_ARROW_RETURN_NOT_OK(builder->Append(avro_datum.value<int64_t>()));
+      return {};
+    }
     case TypeId::kTimestampTz: {
       if (avro_node->type() != ::avro::AVRO_LONG ||
-          avro_node->logicalType().type() != ::avro::LogicalType::TIMESTAMP_MICROS) {
+          avro_node->logicalType().type() != ::avro::LogicalType::TIMESTAMP_MICROS ||
+          GetAdjustToUtcPropValue(avro_node) != "true") {
         return InvalidArgument(
-            "Expected Avro long with TIMESTAMP_MICROS for timestamp field, got: {}",
+            "Expected Avro long with TIMESTAMP_MICROS and adjust-to-utc=true for "
+            "timestamptz field, got: {}",
+            ToString(avro_node));
+      }
+      auto* builder = internal::checked_cast<::arrow::TimestampBuilder*>(array_builder);
+      ICEBERG_ARROW_RETURN_NOT_OK(builder->Append(avro_datum.value<int64_t>()));
+      return {};
+    }
+    case TypeId::kTimestampNs: {
+      if (avro_node->type() != ::avro::AVRO_LONG ||
+          avro_node->logicalType().type() != ::avro::LogicalType::LOCAL_TIMESTAMP_NANOS ||
+          GetAdjustToUtcPropValue(avro_node) != "false") {
+        return InvalidArgument(
+            "Expected Avro long with LOCAL_TIMESTAMP_NANOS and adjust-to-utc=false for "
+            "timestamp_ns field, got: {}",
+            ToString(avro_node));
+      }
+      auto* builder = internal::checked_cast<::arrow::TimestampBuilder*>(array_builder);
+      ICEBERG_ARROW_RETURN_NOT_OK(builder->Append(avro_datum.value<int64_t>()));
+      return {};
+    }
+    case TypeId::kTimestampTzNs: {
+      if (avro_node->type() != ::avro::AVRO_LONG ||
+          avro_node->logicalType().type() != ::avro::LogicalType::TIMESTAMP_NANOS ||
+          GetAdjustToUtcPropValue(avro_node) != "true") {
+        return InvalidArgument(
+            "Expected Avro long with TIMESTAMP_NANOS and adjust-to-utc=true for "
+            "timestamptz_ns field, got: {}",
             ToString(avro_node));
       }
       auto* builder = internal::checked_cast<::arrow::TimestampBuilder*>(array_builder);

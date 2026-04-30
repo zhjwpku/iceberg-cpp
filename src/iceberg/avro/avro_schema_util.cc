@@ -219,6 +219,41 @@ Status ToAvroNodeVisitor::Visit(const BinaryType& type, ::avro::NodePtr* node) {
   return {};
 }
 
+Status ToAvroNodeVisitor::Visit(const UnknownType& type, ::avro::NodePtr* node) {
+  return Visit(BinaryType{}, node);
+}
+
+Status ToAvroNodeVisitor::Visit(const VariantType& type, ::avro::NodePtr* node) {
+  return Visit(BinaryType{}, node);
+}
+
+Status ToAvroNodeVisitor::Visit(const GeometryType& type, ::avro::NodePtr* node) {
+  return Visit(BinaryType{}, node);
+}
+
+Status ToAvroNodeVisitor::Visit(const GeographyType& type, ::avro::NodePtr* node) {
+  return Visit(BinaryType{}, node);
+}
+
+Status ToAvroNodeVisitor::Visit(const TimestampNsType& type, ::avro::NodePtr* node) {
+  *node = std::make_shared<::avro::NodePrimitive>(::avro::AVRO_LONG);
+  (*node)->setLogicalType(
+      ::avro::LogicalType{::avro::LogicalType::LOCAL_TIMESTAMP_NANOS});
+  ::avro::CustomAttributes attributes;
+  attributes.addAttribute(std::string(kAdjustToUtcProp), "false", /*addQuotes=*/false);
+  (*node)->addCustomAttributesForField(attributes);
+  return {};
+}
+
+Status ToAvroNodeVisitor::Visit(const TimestampTzNsType& type, ::avro::NodePtr* node) {
+  *node = std::make_shared<::avro::NodePrimitive>(::avro::AVRO_LONG);
+  (*node)->setLogicalType(::avro::LogicalType{::avro::LogicalType::TIMESTAMP_NANOS});
+  ::avro::CustomAttributes attributes;
+  attributes.addAttribute(std::string(kAdjustToUtcProp), "true", /*addQuotes=*/false);
+  (*node)->addCustomAttributesForField(attributes);
+  return {};
+}
+
 Status ToAvroNodeVisitor::Visit(const StructType& type, ::avro::NodePtr* node) {
   *node = std::make_shared<::avro::NodeRecord>();
 
@@ -580,6 +615,28 @@ Status ValidateAvroSchemaEvolution(const Type& expected_type,
       break;
     case TypeId::kBinary:
       if (avro_node->type() == ::avro::AVRO_BYTES) {
+        return {};
+      }
+      break;
+    case TypeId::kUnknown:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography:
+      if (avro_node->type() == ::avro::AVRO_BYTES) {
+        return {};
+      }
+      break;
+    case TypeId::kTimestampNs:
+      if (avro_node->type() == ::avro::AVRO_LONG &&
+          HasLogicalType(avro_node, ::avro::LogicalType::LOCAL_TIMESTAMP_NANOS) &&
+          GetAdjustToUtc(avro_node).value_or("false") == "false") {
+        return {};
+      }
+      break;
+    case TypeId::kTimestampTzNs:
+      if (avro_node->type() == ::avro::AVRO_LONG &&
+          HasLogicalType(avro_node, ::avro::LogicalType::TIMESTAMP_NANOS) &&
+          GetAdjustToUtc(avro_node).value_or("false") == "true") {
         return {};
       }
       break;

@@ -93,6 +93,22 @@ Result<std::vector<uint8_t>> ToBytesImpl<TypeId::kFixed>(const Literal::Value& v
   return std::get<std::vector<uint8_t>>(value);
 }
 
+template <>
+Result<std::vector<uint8_t>> ToBytesImpl<TypeId::kVariant>(const Literal::Value& value) {
+  return std::get<std::vector<uint8_t>>(value);
+}
+
+template <>
+Result<std::vector<uint8_t>> ToBytesImpl<TypeId::kGeometry>(const Literal::Value& value) {
+  return std::get<std::vector<uint8_t>>(value);
+}
+
+template <>
+Result<std::vector<uint8_t>> ToBytesImpl<TypeId::kGeography>(
+    const Literal::Value& value) {
+  return std::get<std::vector<uint8_t>>(value);
+}
+
 #define DISPATCH_LITERAL_TO_BYTES(type_id) \
   case type_id:                            \
     return ToBytesImpl<type_id>(value);
@@ -109,6 +125,8 @@ Result<std::vector<uint8_t>> Conversions::ToBytes(const PrimitiveType& type,
     DISPATCH_LITERAL_TO_BYTES(TypeId::kTime)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kTimestamp)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kTimestampTz)
+    DISPATCH_LITERAL_TO_BYTES(TypeId::kTimestampNs)
+    DISPATCH_LITERAL_TO_BYTES(TypeId::kTimestampTzNs)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kFloat)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kDouble)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kDecimal)
@@ -116,6 +134,9 @@ Result<std::vector<uint8_t>> Conversions::ToBytes(const PrimitiveType& type,
     DISPATCH_LITERAL_TO_BYTES(TypeId::kUuid)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kBinary)
     DISPATCH_LITERAL_TO_BYTES(TypeId::kFixed)
+    DISPATCH_LITERAL_TO_BYTES(TypeId::kVariant)
+    DISPATCH_LITERAL_TO_BYTES(TypeId::kGeometry)
+    DISPATCH_LITERAL_TO_BYTES(TypeId::kGeography)
 
     default:
       return NotSupported("Serialization for type {} is not supported", type.ToString());
@@ -158,7 +179,9 @@ Result<Literal::Value> Conversions::FromBytes(const PrimitiveType& type,
     case TypeId::kLong:
     case TypeId::kTime:
     case TypeId::kTimestamp:
-    case TypeId::kTimestampTz: {
+    case TypeId::kTimestampTz:
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs: {
       int64_t value;
       if (data.size() < 8) {
         // Type was promoted from int to long
@@ -197,6 +220,10 @@ Result<Literal::Value> Conversions::FromBytes(const PrimitiveType& type,
       return Literal::Value{uuid};
     }
     case TypeId::kBinary:
+      return Literal::Value{std::vector<uint8_t>(data.begin(), data.end())};
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography:
       return Literal::Value{std::vector<uint8_t>(data.begin(), data.end())};
     case TypeId::kFixed: {
       const auto& fixed_type = static_cast<const FixedType&>(type);

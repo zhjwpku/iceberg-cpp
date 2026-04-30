@@ -31,11 +31,14 @@
 
 #include "iceberg/json_serde_internal.h"
 #include "iceberg/name_mapping.h"
+#include "iceberg/partition_spec.h"
 #include "iceberg/schema.h"
 #include "iceberg/schema_field.h"
+#include "iceberg/sort_order.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/table_properties.h"
 #include "iceberg/transaction.h"
+#include "iceberg/transform.h"
 #include "iceberg/type.h"
 #include "iceberg/util/checked_cast.h"
 #include "iceberg/util/error_collector.h"
@@ -48,6 +51,57 @@ namespace iceberg {
 
 namespace {
 constexpr int32_t kTableRootId = -1;
+
+Status ValidateCommittedTransformsCompatibleWithUpdates(
+    const Schema& baseline_schema,
+    const std::unordered_map<int32_t, std::shared_ptr<SchemaField>>& updates,
+    const TableMetadata& metadata) {
+  auto check_source = [&](int32_t source_id, const Transform& transform,
+                          std::string_view role_detail) -> Status {
+    auto it = updates.find(source_id);
+    if (it == updates.end()) {
+      return {};
+    }
+    ICEBERG_ASSIGN_OR_RAISE(auto old_field_opt, baseline_schema.FindFieldById(source_id));
+    if (!old_field_opt.has_value()) {
+      return {};
+    }
+    const auto& old_type = old_field_opt->get().type();
+    const auto& new_type = it->second->type();
+    if (*old_type == *new_type) {
+      return {};
+    }
+    if (!IsPromotionCompatibleWithTransform(old_type, new_type, transform)) {
+      return InvalidArgument(
+          "Cannot evolve type ({}) incompatible with partition or sort transforms for "
+          "source field id {}: {} -> {} with transform {}",
+          role_detail, source_id, old_type->ToString(), new_type->ToString(),
+          transform.ToString());
+    }
+    return {};
+  };
+
+  for (const auto& spec : metadata.partition_specs) {
+    if (!spec) {
+      continue;
+    }
+    for (const auto& pf : spec->fields()) {
+      ICEBERG_RETURN_UNEXPECTED(check_source(pf.source_id(), *pf.transform(), pf.name()));
+    }
+  }
+
+  for (const auto& order : metadata.sort_orders) {
+    if (!order) {
+      continue;
+    }
+    for (const auto& sf : order->fields()) {
+      ICEBERG_RETURN_UNEXPECTED(check_source(sf.source_id(), *sf.transform(),
+                                             std::format("sort {}", sf.source_id())));
+    }
+  }
+
+  return {};
+}
 
 /// \brief Visitor for applying schema changes recursively to nested types
 class ApplyChangesVisitor {
@@ -375,7 +429,9 @@ UpdateSchema& UpdateSchema::AddRequiredColumn(std::optional<std::string_view> pa
 }
 
 UpdateSchema& UpdateSchema::UpdateColumn(std::string_view name,
-                                         std::shared_ptr<PrimitiveType> new_type) {
+                                         std::shared_ptr<Type> new_type) {
+  ICEBERG_BUILDER_CHECK(new_type != nullptr, "Cannot update {} to null type", name);
+
   ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto field_opt, FindFieldForUpdate(name));
   ICEBERG_BUILDER_CHECK(field_opt.has_value(), "Cannot update missing column: {}", name);
 
@@ -389,12 +445,27 @@ UpdateSchema& UpdateSchema::UpdateColumn(std::string_view name,
     return *this;
   }
 
+  const bool unknown_to_nested =
+      field.type()->type_id() == TypeId::kUnknown && new_type->is_nested();
+
+  ICEBERG_BUILDER_CHECK(
+      unknown_to_nested || new_type->is_primitive(),
+      "Cannot change column {} to non-primitive type {} unless evolving unknown to a "
+      "nested type",
+      name, new_type->ToString());
+
   ICEBERG_BUILDER_CHECK(IsPromotionAllowed(field.type(), new_type),
                         "Cannot change column type: {}: {} -> {}", name,
                         field.type()->ToString(), new_type->ToString());
 
-  updates_[field_id] = std::make_shared<SchemaField>(
-      field.field_id(), field.name(), new_type, field.optional(), field.doc());
+  std::shared_ptr<Type> resolved_type =
+      unknown_to_nested
+          ? AssignFreshIdVisitor([this]() { return AssignNewColumnId(); }).Visit(new_type)
+          : new_type;
+
+  updates_[field_id] = std::make_shared<SchemaField>(field.field_id(), field.name(),
+                                                     std::move(resolved_type),
+                                                     field.optional(), field.doc());
 
   return *this;
 }
@@ -548,6 +619,9 @@ UpdateSchema& UpdateSchema::SetIdentifierFields(
 
 Result<UpdateSchema::ApplyResult> UpdateSchema::Apply() {
   ICEBERG_RETURN_UNEXPECTED(CheckErrors());
+
+  ICEBERG_RETURN_UNEXPECTED(
+      ValidateCommittedTransformsCompatibleWithUpdates(*schema_, updates_, base()));
 
   for (const auto& name : identifier_field_names_) {
     ICEBERG_ASSIGN_OR_RAISE(auto field_opt, FindField(name));

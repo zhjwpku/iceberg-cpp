@@ -90,7 +90,7 @@ TEST_P(TypeTest, StdFormat) {
   ASSERT_EQ(test_case.repr, std::format("{}", *test_case.type));
 }
 
-const static std::array<TypeTestCase, 16> kPrimitiveTypes = {{
+const static std::array<TypeTestCase, 24> kPrimitiveTypes = {{
     {
         .name = "boolean",
         .type = iceberg::boolean(),
@@ -202,6 +202,62 @@ const static std::array<TypeTestCase, 16> kPrimitiveTypes = {{
         .type_id = iceberg::TypeId::kUuid,
         .primitive = true,
         .repr = "uuid",
+    },
+    {
+        .name = "unknown",
+        .type = iceberg::unknown(),
+        .type_id = iceberg::TypeId::kUnknown,
+        .primitive = true,
+        .repr = "unknown",
+    },
+    {
+        .name = "variant",
+        .type = iceberg::variant(),
+        .type_id = iceberg::TypeId::kVariant,
+        .primitive = true,
+        .repr = "variant",
+    },
+    {
+        .name = "timestamp_ns",
+        .type = iceberg::timestamp_ns(),
+        .type_id = iceberg::TypeId::kTimestampNs,
+        .primitive = true,
+        .repr = "timestamp_ns",
+    },
+    {
+        .name = "timestamptz_ns",
+        .type = iceberg::timestamptz_ns(),
+        .type_id = iceberg::TypeId::kTimestampTzNs,
+        .primitive = true,
+        .repr = "timestamptz_ns",
+    },
+    {
+        .name = "geometry_default",
+        .type = iceberg::geometry(),
+        .type_id = iceberg::TypeId::kGeometry,
+        .primitive = true,
+        .repr = "geometry",
+    },
+    {
+        .name = "geometry_srid",
+        .type = iceberg::geometry("srid:4326"),
+        .type_id = iceberg::TypeId::kGeometry,
+        .primitive = true,
+        .repr = "geometry(srid:4326)",
+    },
+    {
+        .name = "geography_default",
+        .type = iceberg::geography(),
+        .type_id = iceberg::TypeId::kGeography,
+        .primitive = true,
+        .repr = "geography",
+    },
+    {
+        .name = "geography_params",
+        .type = iceberg::geography("srid:4326", "vincenty"),
+        .type_id = iceberg::TypeId::kGeography,
+        .primitive = true,
+        .repr = "geography(srid:4326,vincenty)",
     },
 }};
 

@@ -2224,4 +2224,35 @@ TEST_F(UpdateSchemaTest, TestCaseInsensitiveMoveAfterNewlyAddedField) {
   EXPECT_EQ(count_pos, ts_pos + 1);
 }
 
+class UpdateSchemaBucketDatePartitionFixture : public UpdateTestBase {
+ protected:
+  std::string MetadataResource() const override {
+    return "TableMetadataV2DateBucketPartition.json";
+  }
+};
+
+TEST_F(UpdateSchemaBucketDatePartitionFixture,
+       ApplyRejectsDatePromotionWhenBucketPartitionUsesSourceColumn) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateSchema());
+  update->UpdateColumn("d", timestamp_ns());
+  ASSERT_FALSE(update->Apply().has_value());
+}
+
+class UpdateSchemaDayDatePartitionFixture : public UpdateTestBase {
+ protected:
+  std::string MetadataResource() const override {
+    return "TableMetadataV2DateDayPartition.json";
+  }
+};
+
+TEST_F(UpdateSchemaDayDatePartitionFixture,
+       ApplyAllowsDatePromotionToTimestampWhenDayPartitionUsesSourceColumn) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateSchema());
+  update->UpdateColumn("d", timestamp());
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+  ICEBERG_UNWRAP_OR_FAIL(auto d_opt, result.schema->FindFieldByName("d"));
+  ASSERT_TRUE(d_opt.has_value());
+  EXPECT_EQ(d_opt->get().type()->type_id(), TypeId::kTimestamp);
+}
+
 }  // namespace iceberg

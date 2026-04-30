@@ -31,7 +31,6 @@ namespace iceberg {
 /// This is not a complete data type by itself because some types are nested
 /// and/or parameterized.
 ///
-/// Iceberg V3 types are not currently supported.
 enum class TypeId {
   kStruct,
   kList,
@@ -50,11 +49,19 @@ enum class TypeId {
   kUuid,
   kFixed,
   kBinary,
+  /// Iceberg format version 3 primitive types.
+  kUnknown,
+  kVariant,
+  kTimestampNs,
+  kTimestampTzNs,
+  kGeometry,
+  kGeography,
 };
 
-/// \brief The time unit.  In Iceberg V3 nanoseconds are also supported.
+/// \brief The time unit for timestamp types.
 enum class TimeUnit {
   kMicrosecond,
+  kNanosecond,
 };
 
 /// \brief Data type family.
@@ -77,6 +84,12 @@ class TimeType;
 class TimestampBase;
 class TimestampType;
 class TimestampTzType;
+class TimestampNsType;
+class TimestampTzNsType;
+class UnknownType;
+class VariantType;
+class GeometryType;
+class GeographyType;
 class Type;
 class UuidType;
 

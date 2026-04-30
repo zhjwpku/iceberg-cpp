@@ -42,6 +42,19 @@ inline constexpr year_month_day TimestampToYmd(int64_t micros_since_epoch) {
   return {floor<days>(sys_time<microseconds>(microseconds{micros_since_epoch}))};
 }
 
+inline constexpr year_month_day TimestampNsToYmd(int64_t nanos_since_epoch) {
+  return {floor<days>(sys_time<nanoseconds>(nanoseconds{nanos_since_epoch}))};
+}
+
+template <typename Duration>
+  requires std::is_same_v<Duration, days> || std::is_same_v<Duration, hours>
+inline constexpr int32_t TimestampNsToDuration(int64_t nanos_since_epoch) {
+  return static_cast<int32_t>(
+      floor<Duration>(
+          sys_time<nanoseconds>(nanoseconds{nanos_since_epoch}).time_since_epoch())
+          .count());
+}
+
 template <typename Duration>
   requires std::is_same_v<Duration, days> || std::is_same_v<Duration, hours>
 inline constexpr int32_t TimestampToDuration(int64_t micros_since_epoch) {
@@ -83,6 +96,18 @@ Result<Literal> ExtractYearImpl<TypeId::kTimestampTz>(const Literal& literal) {
   return ExtractYearImpl<TypeId::kTimestamp>(literal);
 }
 
+template <>
+Result<Literal> ExtractYearImpl<TypeId::kTimestampNs>(const Literal& literal) {
+  auto value = std::get<int64_t>(literal.value());
+  auto ymd = TimestampNsToYmd(value);
+  return Literal::Int((ymd.year() - kEpochYmd.year()).count());
+}
+
+template <>
+Result<Literal> ExtractYearImpl<TypeId::kTimestampTzNs>(const Literal& literal) {
+  return ExtractYearImpl<TypeId::kTimestampNs>(literal);
+}
+
 template <TypeId type_id>
 Result<Literal> ExtractMonthImpl(const Literal& literal) {
   std::unreachable();
@@ -107,6 +132,18 @@ Result<Literal> ExtractMonthImpl<TypeId::kTimestampTz>(const Literal& literal) {
   return ExtractMonthImpl<TypeId::kTimestamp>(literal);
 }
 
+template <>
+Result<Literal> ExtractMonthImpl<TypeId::kTimestampNs>(const Literal& literal) {
+  auto value = std::get<int64_t>(literal.value());
+  auto ymd = TimestampNsToYmd(value);
+  return Literal::Int(MonthsSinceEpoch(ymd));
+}
+
+template <>
+Result<Literal> ExtractMonthImpl<TypeId::kTimestampTzNs>(const Literal& literal) {
+  return ExtractMonthImpl<TypeId::kTimestampNs>(literal);
+}
+
 template <TypeId type_id>
 Result<Literal> ExtractDayImpl(const Literal& literal) {
   std::unreachable();
@@ -128,6 +165,17 @@ Result<Literal> ExtractDayImpl<TypeId::kTimestampTz>(const Literal& literal) {
   return ExtractDayImpl<TypeId::kTimestamp>(literal);
 }
 
+template <>
+Result<Literal> ExtractDayImpl<TypeId::kTimestampNs>(const Literal& literal) {
+  auto value = std::get<int64_t>(literal.value());
+  return Literal::Int(TimestampNsToDuration<days>(value));
+}
+
+template <>
+Result<Literal> ExtractDayImpl<TypeId::kTimestampTzNs>(const Literal& literal) {
+  return ExtractDayImpl<TypeId::kTimestampNs>(literal);
+}
+
 template <TypeId type_id>
 Result<Literal> ExtractHourImpl(const Literal& literal) {
   std::unreachable();
@@ -142,6 +190,17 @@ Result<Literal> ExtractHourImpl<TypeId::kTimestamp>(const Literal& literal) {
 template <>
 Result<Literal> ExtractHourImpl<TypeId::kTimestampTz>(const Literal& literal) {
   return ExtractHourImpl<TypeId::kTimestamp>(literal);
+}
+
+template <>
+Result<Literal> ExtractHourImpl<TypeId::kTimestampNs>(const Literal& literal) {
+  auto value = std::get<int64_t>(literal.value());
+  return Literal::Int(TimestampNsToDuration<hours>(value));
+}
+
+template <>
+Result<Literal> ExtractHourImpl<TypeId::kTimestampTzNs>(const Literal& literal) {
+  return ExtractHourImpl<TypeId::kTimestampNs>(literal);
 }
 
 }  // namespace
@@ -163,6 +222,8 @@ Result<Literal> TemporalUtils::ExtractYear(const Literal& literal) {
     DISPATCH_EXTRACT_YEAR(TypeId::kDate)
     DISPATCH_EXTRACT_YEAR(TypeId::kTimestamp)
     DISPATCH_EXTRACT_YEAR(TypeId::kTimestampTz)
+    DISPATCH_EXTRACT_YEAR(TypeId::kTimestampNs)
+    DISPATCH_EXTRACT_YEAR(TypeId::kTimestampTzNs)
     default:
       return NotSupported("Extract year from type {} is not supported",
                           literal.type()->ToString());
@@ -186,6 +247,8 @@ Result<Literal> TemporalUtils::ExtractMonth(const Literal& literal) {
     DISPATCH_EXTRACT_MONTH(TypeId::kDate)
     DISPATCH_EXTRACT_MONTH(TypeId::kTimestamp)
     DISPATCH_EXTRACT_MONTH(TypeId::kTimestampTz)
+    DISPATCH_EXTRACT_MONTH(TypeId::kTimestampNs)
+    DISPATCH_EXTRACT_MONTH(TypeId::kTimestampTzNs)
     default:
       return NotSupported("Extract month from type {} is not supported",
                           literal.type()->ToString());
@@ -209,6 +272,8 @@ Result<Literal> TemporalUtils::ExtractDay(const Literal& literal) {
     DISPATCH_EXTRACT_DAY(TypeId::kDate)
     DISPATCH_EXTRACT_DAY(TypeId::kTimestamp)
     DISPATCH_EXTRACT_DAY(TypeId::kTimestampTz)
+    DISPATCH_EXTRACT_DAY(TypeId::kTimestampNs)
+    DISPATCH_EXTRACT_DAY(TypeId::kTimestampTzNs)
     default:
       return NotSupported("Extract day from type {} is not supported",
                           literal.type()->ToString());

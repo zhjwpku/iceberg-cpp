@@ -18,6 +18,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <format>
 #include <regex>
@@ -373,6 +374,18 @@ nlohmann::json ToJson(const Type& type) {
     }
     case TypeId::kUuid:
       return "uuid";
+    case TypeId::kUnknown:
+      return "unknown";
+    case TypeId::kVariant:
+      return "variant";
+    case TypeId::kTimestampNs:
+      return "timestamp_ns";
+    case TypeId::kTimestampTzNs:
+      return "timestamptz_ns";
+    case TypeId::kGeometry:
+      return internal::checked_cast<const GeometryType&>(type).ToString();
+    case TypeId::kGeography:
+      return internal::checked_cast<const GeographyType&>(type).ToString();
   }
   std::unreachable();
 }
@@ -424,6 +437,16 @@ nlohmann::json ToJson(const Snapshot& snapshot) {
 }
 
 namespace {
+
+std::string TrimTypeParam(std::string_view s) {
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+    s.remove_prefix(1);
+  }
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+    s.remove_suffix(1);
+  }
+  return std::string(s);
+}
 
 Result<std::unique_ptr<Type>> StructTypeFromJson(const nlohmann::json& json) {
   ICEBERG_ASSIGN_OR_RAISE(auto json_fields, GetJsonValue<nlohmann::json>(json, kFields));
@@ -494,6 +517,38 @@ Result<std::unique_ptr<Type>> TypeFromJson(const nlohmann::json& json) {
       return std::make_unique<BinaryType>();
     } else if (type_str == "uuid") {
       return std::make_unique<UuidType>();
+    } else if (type_str == "unknown") {
+      return std::make_unique<UnknownType>();
+    } else if (type_str == "variant") {
+      return std::make_unique<VariantType>();
+    } else if (type_str == "timestamp_ns") {
+      return std::make_unique<TimestampNsType>();
+    } else if (type_str == "timestamptz_ns") {
+      return std::make_unique<TimestampTzNsType>();
+    } else if (type_str.starts_with("geometry")) {
+      std::regex geometry_regex(R"(^geometry(?:\(\s*([^)]*)\s*\))?$)");
+      std::smatch match;
+      if (!std::regex_match(type_str, match, geometry_regex)) {
+        return JsonParseError("Invalid geometry type: {}", type_str);
+      }
+      return std::make_unique<GeometryType>(TrimTypeParam(match[1].str()));
+    } else if (type_str.starts_with("geography")) {
+      std::regex geography_regex(R"(^geography(?:\(\s*([^)]*)\s*\))?$)");
+      std::smatch match;
+      if (!std::regex_match(type_str, match, geography_regex)) {
+        return JsonParseError("Invalid geography type: {}", type_str);
+      }
+      std::string inner = TrimTypeParam(match[1].str());
+      if (inner.empty()) {
+        return std::make_unique<GeographyType>("", "");
+      }
+      const auto comma_pos = inner.find(',');
+      if (comma_pos == std::string::npos) {
+        return std::make_unique<GeographyType>(std::move(inner), "");
+      }
+      return std::make_unique<GeographyType>(
+          TrimTypeParam(std::string_view(inner).substr(0, comma_pos)),
+          TrimTypeParam(std::string_view(inner).substr(comma_pos + 1)));
     } else if (type_str.starts_with("fixed")) {
       std::regex fixed_regex(R"(fixed\[\s*(\d+)\s*\])");
       std::smatch match;

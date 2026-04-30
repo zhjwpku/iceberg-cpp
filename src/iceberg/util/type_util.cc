@@ -23,6 +23,7 @@
 
 #include "iceberg/result.h"
 #include "iceberg/schema.h"
+#include "iceberg/transform.h"
 #include "iceberg/util/checked_cast.h"
 #include "iceberg/util/formatter_internal.h"
 #include "iceberg/util/macros.h"
@@ -418,6 +419,11 @@ bool IsPromotionAllowed(const std::shared_ptr<Type>& from_type,
     return true;
   }
 
+  // Iceberg v3: unknown evolved to nested struct/list/map.
+  if (from_type->type_id() == TypeId::kUnknown && to_type->is_nested()) {
+    return true;
+  }
+
   // Both must be primitive types for promotion
   if (!from_type->is_primitive() || !to_type->is_primitive()) {
     return false;
@@ -425,6 +431,17 @@ bool IsPromotionAllowed(const std::shared_ptr<Type>& from_type,
 
   TypeId from_id = from_type->type_id();
   TypeId to_id = to_type->type_id();
+
+  // unknown -> any primitive (Iceberg v3 spec).
+  if (from_id == TypeId::kUnknown) {
+    return true;
+  }
+
+  // date -> timestamp or timestamp_ns (not timestamptz / timestamptz_ns).
+  if (from_id == TypeId::kDate &&
+      (to_id == TypeId::kTimestamp || to_id == TypeId::kTimestampNs)) {
+    return true;
+  }
 
   // int -> long
   if (from_id == TypeId::kInt && to_id == TypeId::kLong) {
@@ -446,6 +463,40 @@ bool IsPromotionAllowed(const std::shared_ptr<Type>& from_type,
   }
 
   return false;
+}
+
+bool IsPromotionCompatibleWithTransform(const std::shared_ptr<Type>& from_type,
+                                        const std::shared_ptr<Type>& to_type,
+                                        const Transform& transform) {
+  if (!from_type || !to_type) {
+    return false;
+  }
+  if (*from_type == *to_type) {
+    return true;
+  }
+
+  const auto tt = transform.transform_type();
+  if (tt == TransformType::kVoid || tt == TransformType::kUnknown) {
+    return true;
+  }
+
+  if (tt == TransformType::kIdentity) {
+    return from_type->type_id() == TypeId::kUnknown && to_type->is_primitive() &&
+           IsPromotionAllowed(from_type, to_type);
+  }
+
+  // Bucket on date hashes days-since-epoch bytes; widening to timestamps is not
+  // compatible with historical partition values.
+  if (tt == TransformType::kBucket && from_type->type_id() == TypeId::kDate &&
+      to_type->type_id() != TypeId::kDate) {
+    return false;
+  }
+
+  if (!IsPromotionAllowed(from_type, to_type)) {
+    return false;
+  }
+
+  return transform.CanTransform(*to_type);
 }
 
 }  // namespace iceberg

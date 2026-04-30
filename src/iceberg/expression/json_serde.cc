@@ -272,6 +272,9 @@ Result<nlohmann::json> ToJson(const Literal& literal) {
     case TypeId::kTimestampTz:
       return nlohmann::json(
           TransformUtil::HumanTimestampWithZone(std::get<int64_t>(value)));
+    case TypeId::kTimestampNs:
+    case TypeId::kTimestampTzNs:
+      return nlohmann::json(std::get<int64_t>(value));
     case TypeId::kFloat:
       return nlohmann::json(std::get<float>(value));
     case TypeId::kDouble:
@@ -279,7 +282,10 @@ Result<nlohmann::json> ToJson(const Literal& literal) {
     case TypeId::kString:
       return nlohmann::json(std::get<std::string>(value));
     case TypeId::kBinary:
-    case TypeId::kFixed: {
+    case TypeId::kFixed:
+    case TypeId::kVariant:
+    case TypeId::kGeometry:
+    case TypeId::kGeography: {
       // base 16 encoding for binary data
       const auto& bytes = std::get<std::vector<uint8_t>>(value);
       std::string hex;
@@ -390,6 +396,22 @@ Result<Literal> LiteralFromJson(const nlohmann::json& json, const Type* type) {
       return Literal::TimestampTz(micros);
     }
 
+    case TypeId::kTimestampNs: {
+      if (!json.is_number_integer()) [[unlikely]] {
+        return JsonParseError("Cannot parse {} as a timestamp_ns value",
+                              SafeDumpJson(json));
+      }
+      return Literal::TimestampNs(json.get<int64_t>());
+    }
+
+    case TypeId::kTimestampTzNs: {
+      if (!json.is_number_integer()) [[unlikely]] {
+        return JsonParseError("Cannot parse {} as a timestamptz_ns value",
+                              SafeDumpJson(json));
+      }
+      return Literal::TimestampTzNs(json.get<int64_t>());
+    }
+
     case TypeId::kUuid: {
       if (!json.is_string()) [[unlikely]] {
         return JsonParseError("Cannot parse {} as a uuid value", SafeDumpJson(json));
@@ -405,6 +427,36 @@ Result<Literal> LiteralFromJson(const nlohmann::json& json, const Type* type) {
       ICEBERG_ASSIGN_OR_RAISE(auto bytes,
                               StringUtils::HexStringToBytes(json.get<std::string>()));
       return Literal::Binary(std::move(bytes));
+    }
+
+    case TypeId::kVariant: {
+      if (!json.is_string()) [[unlikely]] {
+        return JsonParseError("Cannot parse {} as a variant value", SafeDumpJson(json));
+      }
+      ICEBERG_ASSIGN_OR_RAISE(auto bytes,
+                              StringUtils::HexStringToBytes(json.get<std::string>()));
+      return Literal::Variant(std::move(bytes));
+    }
+
+    case TypeId::kGeometry: {
+      if (!json.is_string()) [[unlikely]] {
+        return JsonParseError("Cannot parse {} as a geometry value", SafeDumpJson(json));
+      }
+      ICEBERG_ASSIGN_OR_RAISE(auto bytes,
+                              StringUtils::HexStringToBytes(json.get<std::string>()));
+      const auto& geo_type = internal::checked_cast<const GeometryType&>(*type);
+      return Literal::GeometryValue(std::move(bytes), geometry(geo_type.crs()));
+    }
+
+    case TypeId::kGeography: {
+      if (!json.is_string()) [[unlikely]] {
+        return JsonParseError("Cannot parse {} as a geography value", SafeDumpJson(json));
+      }
+      ICEBERG_ASSIGN_OR_RAISE(auto bytes,
+                              StringUtils::HexStringToBytes(json.get<std::string>()));
+      const auto& geo_type = internal::checked_cast<const GeographyType&>(*type);
+      return Literal::GeographyValue(
+          std::move(bytes), geography(geo_type.crs(), geo_type.edge_algorithm()));
     }
 
     case TypeId::kFixed: {
