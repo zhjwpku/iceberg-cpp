@@ -28,6 +28,9 @@
 #include "iceberg/avro/avro_register.h"
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/manifest/manifest_writer.h"
+#include "iceberg/partition_spec.h"
+#include "iceberg/schema.h"
+#include "iceberg/snapshot.h"
 #include "iceberg/statistics_file.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/test/matchers.h"
@@ -135,6 +138,13 @@ class ExpireSnapshotsCleanupTest : public UpdateTestBase {
     return manifest_result.value();
   }
 
+  ManifestFile AssignManifestSequenceNumber(ManifestFile manifest,
+                                            int64_t sequence_number) const {
+    manifest.sequence_number = sequence_number;
+    manifest.min_sequence_number = sequence_number;
+    return manifest;
+  }
+
   ManifestFile WriteDeleteManifest(const std::string& path, int64_t snapshot_id,
                                    std::vector<ManifestEntry> entries) {
     auto writer_result = ManifestWriter::MakeWriter(
@@ -227,6 +237,15 @@ TEST_F(ExpireSnapshotsTest, ExpireById) {
   EXPECT_EQ(result.snapshot_ids_to_remove.at(0), 3051729675574597004);
 }
 
+TEST_F(ExpireSnapshotsTest, ExpireByIdOverridesRetainLast) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->RetainLast(2);
+  update->ExpireSnapshotId(3051729675574597004);
+
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+  EXPECT_THAT(result.snapshot_ids_to_remove, testing::ElementsAre(3051729675574597004));
+}
+
 TEST_F(ExpireSnapshotsTest, ExpireOlderThan) {
   struct TestCase {
     int64_t expire_older_than;
@@ -241,6 +260,30 @@ TEST_F(ExpireSnapshotsTest, ExpireOlderThan) {
     ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
     EXPECT_EQ(result.snapshot_ids_to_remove.size(), test_case.expected_num_expired);
   }
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, RetainsUnreferencedSnapshotAtExpireThreshold) {
+  const int64_t unreferenced_snapshot_id = 4055729675574597004;
+  const int64_t expire_at_ms = 1515100955770;
+
+  auto metadata = ReloadMetadata();
+  metadata->snapshots.push_back(std::make_shared<Snapshot>(Snapshot{
+      .snapshot_id = unreferenced_snapshot_id,
+      .parent_snapshot_id = std::nullopt,
+      .sequence_number = 2,
+      .timestamp_ms = TimePointMsFromUnixMs(expire_at_ms),
+      .manifest_list = table_location_ + "/metadata/unreferenced.avro",
+      .summary = {{SnapshotSummaryFields::kOperation, "append"}},
+      .schema_id = metadata->current_schema_id,
+  }));
+  RewriteTable(std::move(metadata));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->ExpireOlderThan(expire_at_ms);
+
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+  EXPECT_THAT(result.snapshot_ids_to_remove,
+              testing::Not(testing::Contains(unreferenced_snapshot_id)));
 }
 
 TEST_F(ExpireSnapshotsTest, FinalizeRequiresCommittedMetadata) {
@@ -350,6 +393,8 @@ TEST_F(ExpireSnapshotsCleanupTest, IgnoresExpiredDeleteManifestReadFailures) {
 
   std::vector<std::string> deleted_files;
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  // Force the reachable path.
+  update->ExpireSnapshotId(kExpiredSnapshotId);
   update->DeleteWith(
       [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
 
@@ -388,6 +433,7 @@ TEST_F(ExpireSnapshotsCleanupTest, DeletesExpiredFiles) {
 
   std::vector<std::string> deleted_files;
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->ExpireSnapshotId(kExpiredSnapshotId);
   update->DeleteWith(
       [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
 
@@ -571,6 +617,218 @@ TEST_F(ExpireSnapshotsCleanupTest, KeepsReusedPartitionStats) {
 
   EXPECT_THAT(update->Commit(), IsOk());
   EXPECT_THAT(deleted_files, testing::Not(testing::Contains(reused_statistics_path)));
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, IncrementalDispatchPreservesAncestorAddedFiles) {
+  const auto expired_data_file_path = table_location_ + "/data/expired-data.parquet";
+  const auto expired_data_manifest_path = table_location_ + "/metadata/expired-data.avro";
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-manifest-list.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-manifest-list.avro";
+
+  auto expired_data_manifest = WriteDataManifest(
+      expired_data_manifest_path, kExpiredSnapshotId,
+      {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId, kExpiredSequenceNumber,
+                 MakeDataFile(expired_data_file_path))});
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber,
+                    {expired_data_manifest});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_manifest_list_path, current_manifest_list_path);
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_THAT(deleted_files, testing::Contains(expired_data_manifest_path));
+  EXPECT_THAT(deleted_files, testing::Contains(expired_manifest_list_path));
+  EXPECT_THAT(deleted_files, testing::Not(testing::Contains(expired_data_file_path)));
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, IncrementalDeletesExpiredDeletedEntries) {
+  const auto deleted_data_file_path =
+      table_location_ + "/data/deleted-by-expired.parquet";
+  const auto delete_manifest_path =
+      table_location_ + "/metadata/expired-delete-entry.avro";
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-deleted-entry-ml.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-deleted-entry-ml.avro";
+
+  auto delete_manifest = WriteDataManifest(
+      delete_manifest_path, kExpiredSnapshotId,
+      {MakeEntry(ManifestStatus::kDeleted, kExpiredSnapshotId, kExpiredSequenceNumber,
+                 MakeDataFile(deleted_data_file_path))});
+  delete_manifest =
+      AssignManifestSequenceNumber(std::move(delete_manifest), kExpiredSequenceNumber);
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber, {delete_manifest});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {delete_manifest});
+  RewriteTableWithManifestLists(expired_manifest_list_path, current_manifest_list_path);
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_THAT(deleted_files, testing::Contains(deleted_data_file_path));
+  EXPECT_THAT(deleted_files, testing::Contains(expired_manifest_list_path));
+  EXPECT_THAT(deleted_files, testing::Not(testing::Contains(delete_manifest_path)));
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, ReachableDispatchDeletesUnreachableData) {
+  const auto expired_data_file_path = table_location_ + "/data/expired-data.parquet";
+  const auto expired_data_manifest_path = table_location_ + "/metadata/expired-data.avro";
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-manifest-list.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-manifest-list.avro";
+
+  auto expired_data_manifest = WriteDataManifest(
+      expired_data_manifest_path, kExpiredSnapshotId,
+      {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId, kExpiredSequenceNumber,
+                 MakeDataFile(expired_data_file_path))});
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber,
+                    {expired_data_manifest});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_manifest_list_path, current_manifest_list_path);
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->ExpireSnapshotId(kExpiredSnapshotId);
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_THAT(deleted_files, testing::UnorderedElementsAre(expired_data_file_path,
+                                                           expired_data_manifest_path,
+                                                           expired_manifest_list_path));
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, IncrementalSkipsCherryPickedSnapshotCleanup) {
+  const auto picked_data_file_path = table_location_ + "/data/picked-data.parquet";
+  const auto picked_manifest_path = table_location_ + "/metadata/picked-data.avro";
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-picked-ml.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-picked-ml.avro";
+
+  auto picked_manifest = WriteDataManifest(
+      picked_manifest_path, kExpiredSnapshotId,
+      {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId, kExpiredSequenceNumber,
+                 MakeDataFile(picked_data_file_path))});
+  picked_manifest =
+      AssignManifestSequenceNumber(std::move(picked_manifest), kExpiredSequenceNumber);
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber, {picked_manifest});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {picked_manifest});
+
+  auto metadata = ReloadMetadata();
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+  metadata->snapshots.at(0)->manifest_list = expired_manifest_list_path;
+  metadata->snapshots.at(1)->manifest_list = current_manifest_list_path;
+  metadata->snapshots.at(1)->summary[SnapshotSummaryFields::kSourceSnapshotId] =
+      std::to_string(kExpiredSnapshotId);
+  RewriteTable(std::move(metadata));
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_TRUE(deleted_files.empty());
+  auto committed_metadata = ReloadMetadata();
+  EXPECT_EQ(committed_metadata->snapshots.size(), 1);
+  EXPECT_EQ(committed_metadata->snapshots.at(0)->snapshot_id, kCurrentSnapshotId);
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, ReachableCleanupFailsClosedOnUnbindableExpiredSpec) {
+  const auto expired_data_file_path = table_location_ + "/data/expired-data.parquet";
+  const auto expired_data_manifest_path = table_location_ + "/metadata/expired-data.avro";
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-manifest-list.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-manifest-list.avro";
+
+  auto expired_data_manifest = WriteDataManifest(
+      expired_data_manifest_path, kExpiredSnapshotId,
+      {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId, kExpiredSequenceNumber,
+                 MakeDataFile(expired_data_file_path))});
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber,
+                    {expired_data_manifest});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+
+  auto metadata = ReloadMetadata();
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+  metadata->snapshots.at(0)->manifest_list = expired_manifest_list_path;
+  metadata->snapshots.at(1)->manifest_list = current_manifest_list_path;
+  ICEBERG_UNWRAP_OR_FAIL(auto retained_spec, PartitionSpec::Make(/*spec_id=*/1, {}));
+  metadata->partition_specs.push_back(
+      std::shared_ptr<PartitionSpec>(std::move(retained_spec)));
+  metadata->default_spec_id = 1;
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto retained_schema,
+      Schema::Make(std::vector<SchemaField>{SchemaField::MakeRequired(2, "y", int64()),
+                                            SchemaField::MakeRequired(3, "z", int64())},
+                   /*schema_id=*/2, std::vector<int32_t>{}));
+  metadata->schemas.push_back(std::shared_ptr<Schema>(std::move(retained_schema)));
+  metadata->current_schema_id = 2;
+  metadata->snapshots.at(1)->schema_id = 2;
+  RewriteTable(std::move(metadata));
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->ExpireSnapshotId(kExpiredSnapshotId);
+  update->CleanExpiredMetadata(true);
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_THAT(deleted_files, testing::UnorderedElementsAre(expired_data_manifest_path,
+                                                           expired_manifest_list_path));
+  EXPECT_THAT(deleted_files, testing::Not(testing::Contains(expired_data_file_path)));
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, CommitIgnoresMalformedSourceSnapshotIdCleanup) {
+  const auto expired_manifest_list_path =
+      table_location_ + "/metadata/expired-malformed-ml.avro";
+  const auto current_manifest_list_path =
+      table_location_ + "/metadata/current-malformed-ml.avro";
+  WriteManifestList(expired_manifest_list_path, kExpiredSnapshotId,
+                    /*parent_snapshot_id=*/0, kExpiredSequenceNumber, {});
+  WriteManifestList(current_manifest_list_path, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+
+  auto metadata = ReloadMetadata();
+  ASSERT_EQ(metadata->snapshots.size(), 2);
+  metadata->snapshots.at(0)->manifest_list = expired_manifest_list_path;
+  metadata->snapshots.at(1)->manifest_list = current_manifest_list_path;
+  metadata->snapshots.at(1)->summary[SnapshotSummaryFields::kSourceSnapshotId] =
+      "not-a-number";
+  RewriteTable(std::move(metadata));
+
+  std::vector<std::string> deleted_files;
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  update->DeleteWith(
+      [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
+
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_TRUE(deleted_files.empty());
+  auto committed_metadata = ReloadMetadata();
+  EXPECT_EQ(committed_metadata->snapshots.size(), 1);
+  EXPECT_EQ(committed_metadata->snapshots.at(0)->snapshot_id, kCurrentSnapshotId);
 }
 
 }  // namespace iceberg
