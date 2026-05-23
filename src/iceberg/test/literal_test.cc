@@ -102,10 +102,12 @@ TEST(LiteralTest, CrossTypeComparison) {
   EXPECT_EQ(long_literal <=> timestamp_literal, std::partial_ordering::unordered);
   EXPECT_EQ(timestamp_literal <=> timestamp_ns_literal, std::partial_ordering::unordered);
   EXPECT_EQ(int_literal <=> Literal::Date(42), std::partial_ordering::equivalent);
-  EXPECT_EQ(timestamp_literal <=> timestamp_tz_literal,
-            std::partial_ordering::equivalent);
+  EXPECT_EQ(timestamp_literal <=> timestamp_tz_literal, std::partial_ordering::unordered);
+  EXPECT_EQ(timestamp_tz_literal <=> timestamp_literal, std::partial_ordering::unordered);
   EXPECT_EQ(timestamp_ns_literal <=> timestamp_tz_ns_literal,
-            std::partial_ordering::equivalent);
+            std::partial_ordering::unordered);
+  EXPECT_EQ(timestamp_tz_ns_literal <=> timestamp_ns_literal,
+            std::partial_ordering::unordered);
 }
 
 // Overflow tests

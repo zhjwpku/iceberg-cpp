@@ -458,12 +458,8 @@ bool Comparable(TypeId lhs, TypeId rhs) {
       (rhs == TypeId::kInt || rhs == TypeId::kDate)) {
     return true;
   }
-  if ((lhs == TypeId::kTimestamp || lhs == TypeId::kTimestampTz) &&
-      (rhs == TypeId::kTimestamp || rhs == TypeId::kTimestampTz)) {
-    return true;
-  }
-  return (lhs == TypeId::kTimestampNs || lhs == TypeId::kTimestampTzNs) &&
-         (rhs == TypeId::kTimestampNs || rhs == TypeId::kTimestampTzNs);
+  // Java allows zoned/non-zoned timestamp comparisons; keep C++ stricter for now.
+  return false;
 }
 
 }  // namespace
