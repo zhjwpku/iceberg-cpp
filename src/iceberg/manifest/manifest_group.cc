@@ -19,8 +19,14 @@
 
 #include "iceberg/manifest/manifest_group.h"
 
+#include <algorithm>
+#include <memory>
+#include <string>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include "iceberg/expression/binder.h"
 #include "iceberg/expression/evaluator.h"
 #include "iceberg/expression/expression.h"
 #include "iceberg/expression/manifest_evaluator.h"
@@ -29,13 +35,46 @@
 #include "iceberg/file_io.h"
 #include "iceberg/manifest/manifest_reader.h"
 #include "iceberg/partition_spec.h"
+#include "iceberg/row/manifest_wrapper.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_scan.h"
+#include "iceberg/type.h"
 #include "iceberg/util/checked_cast.h"
 #include "iceberg/util/content_file_util.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
+
+namespace {
+
+std::shared_ptr<Schema> DataFileFilterSchema() {
+  auto empty_partition_type = std::make_shared<StructType>(std::vector<SchemaField>{});
+  return std::make_shared<Schema>(std::vector<SchemaField>{
+      DataFile::kContent,
+      DataFile::kFilePath,
+      DataFile::kFileFormat,
+      DataFile::kSpecId,
+      SchemaField::MakeRequired(DataFile::kPartitionFieldId, DataFile::kPartitionField,
+                                std::move(empty_partition_type), DataFile::kPartitionDoc),
+      DataFile::kRecordCount,
+      DataFile::kFileSize,
+      DataFile::kColumnSizes,
+      DataFile::kValueCounts,
+      DataFile::kNullValueCounts,
+      DataFile::kNanValueCounts,
+      DataFile::kLowerBounds,
+      DataFile::kUpperBounds,
+      DataFile::kKeyMetadata,
+      DataFile::kSplitOffsets,
+      DataFile::kEqualityIds,
+      DataFile::kSortOrderId,
+      DataFile::kFirstRowId,
+      DataFile::kReferencedDataFile,
+      DataFile::kContentOffset,
+      DataFile::kContentSize});
+}
+
+}  // namespace
 
 Result<std::unique_ptr<ManifestGroup>> ManifestGroup::Make(
     std::shared_ptr<FileIO> io, std::shared_ptr<Schema> schema,
@@ -265,10 +304,39 @@ Result<std::unique_ptr<ManifestReader>> ManifestGroup::MakeReader(
   ICEBERG_ASSIGN_OR_RAISE(auto reader,
                           ManifestReader::Make(manifest, io_, schema_, specs_by_id_));
 
+  auto columns = columns_;
+  if (file_filter_ && file_filter_->op() != Expression::Operation::kTrue &&
+      !columns.empty() &&
+      std::ranges::find(columns, Schema::kAllColumns) == columns.end()) {
+    auto data_file_schema = DataFileFilterSchema();
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto bound_file_filter,
+        Binder::Bind(*data_file_schema, file_filter_, case_sensitive_));
+    ICEBERG_ASSIGN_OR_RAISE(auto referenced_field_ids,
+                            ReferenceVisitor::GetReferencedFieldIds(bound_file_filter));
+
+    std::unordered_set<std::string> selected_columns(columns.cbegin(), columns.cend());
+    for (const auto field_id : referenced_field_ids) {
+      if (field_id == DataFile::kSpecIdFieldId) {
+        continue;
+      }
+      ICEBERG_ASSIGN_OR_RAISE(auto column_name,
+                              data_file_schema->FindColumnNameById(field_id));
+      if (column_name.has_value()) {
+        std::string column_name_str(column_name.value());
+        if (selected_columns.contains(column_name_str)) {
+          continue;
+        }
+        columns.push_back(std::move(column_name_str));
+        selected_columns.insert(columns.back());
+      }
+    }
+  }
+
   reader->FilterRows(data_filter_)
       .FilterPartitions(partition_filter_)
       .CaseSensitive(case_sensitive_)
-      .Select(columns_);
+      .Select(std::move(columns));
 
   return reader;
 }
@@ -299,10 +367,13 @@ ManifestGroup::ReadEntries() {
     return eval_cache[spec_id].get();
   };
 
+  const bool has_file_filter =
+      file_filter_ && file_filter_->op() != Expression::Operation::kTrue;
   std::unique_ptr<Evaluator> data_file_evaluator;
-  if (file_filter_ && file_filter_->op() != Expression::Operation::kTrue) {
-    // TODO(gangwu): create an Evaluator on the DataFile schema with empty
-    // partition type
+  if (has_file_filter) {
+    ICEBERG_ASSIGN_OR_RAISE(
+        data_file_evaluator,
+        Evaluator::Make(*DataFileFilterSchema(), file_filter_, case_sensitive_));
   }
 
   std::unordered_map<int32_t, std::vector<ManifestEntry>> result;
@@ -343,8 +414,12 @@ ManifestGroup::ReadEntries() {
       }
 
       if (data_file_evaluator != nullptr) {
-        // TODO(gangwu): implement data_file_evaluator to evaluate StructLike on
-        // top of entry.data_file
+        DataFileStructLike data_file(*entry.data_file);
+        ICEBERG_ASSIGN_OR_RAISE(bool should_match,
+                                data_file_evaluator->Evaluate(data_file));
+        if (!should_match) {
+          continue;
+        }
       }
 
       if (!manifest_entry_predicate_(entry)) {
