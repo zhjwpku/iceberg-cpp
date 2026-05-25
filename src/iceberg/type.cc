@@ -369,8 +369,12 @@ TypeId BinaryType::type_id() const { return kTypeId; }
 std::string BinaryType::ToString() const { return "binary"; }
 bool BinaryType::Equals(const Type& other) const { return other.type_id() == kTypeId; }
 
+TypeId VariantType::type_id() const { return kTypeId; }
+std::string VariantType::ToString() const { return "variant"; }
+bool VariantType::Equals(const Type& other) const { return other.type_id() == kTypeId; }
+
 // ----------------------------------------------------------------------
-// Factory functions for creating primitive data types
+// Factory functions for creating data types
 
 #define TYPE_FACTORY(NAME, KLASS)                                     \
   const std::shared_ptr<KLASS>& NAME() {                              \
@@ -392,6 +396,7 @@ TYPE_FACTORY(timestamptz_ns, TimestampTzNsType)
 TYPE_FACTORY(binary, BinaryType)
 TYPE_FACTORY(string, StringType)
 TYPE_FACTORY(uuid, UuidType)
+TYPE_FACTORY(variant, VariantType)
 
 #undef TYPE_FACTORY
 
@@ -455,6 +460,8 @@ std::string_view ToString(TypeId id) {
       return "fixed";
     case TypeId::kBinary:
       return "binary";
+    case TypeId::kVariant:
+      return "variant";
   }
 
   std::unreachable();

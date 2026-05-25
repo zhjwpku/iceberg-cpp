@@ -62,4 +62,7 @@ std::vector<int32_t> SelectedColumnIndices(const SchemaProjection& projection);
 /// \return True if the Parquet schema has field IDs, false otherwise.
 bool HasFieldIds(const ::parquet::schema::NodePtr& root_node);
 
+/// \brief Register Arrow's Parquet Variant extension type if available.
+Status EnsureParquetVariantExtensionRegistered();
+
 }  // namespace iceberg::parquet
