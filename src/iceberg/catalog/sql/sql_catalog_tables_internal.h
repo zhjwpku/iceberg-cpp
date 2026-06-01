@@ -39,6 +39,10 @@
 
 namespace iceberg::sql {
 
+// sqlpp23 name tags require a static `const char name[]` member; the
+// `SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP` macro provides that required shape.
+// NOLINTBEGIN(modernize-avoid-c-arrays)
+
 struct IcebergTables_ {
   struct CatalogName {
     SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(catalog_name, catalogName);
@@ -127,5 +131,7 @@ struct IcebergNamespaceProperties_ {
       sqlpp::column_t<sqlpp::table_t<IcebergNamespaceProperties_>, PropertyKey>>;
 };
 using IcebergNamespaceProperties = ::sqlpp::table_t<IcebergNamespaceProperties_>;
+
+// NOLINTEND(modernize-avoid-c-arrays)
 
 }  // namespace iceberg::sql
