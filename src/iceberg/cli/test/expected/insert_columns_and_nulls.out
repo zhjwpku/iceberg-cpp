@@ -1,0 +1,6 @@
+created table people
+inserted 2 rows into people
+id	active	name	rating
+10	NULL	carol	NULL
+11	NULL	NULL	NULL
+(2 rows)

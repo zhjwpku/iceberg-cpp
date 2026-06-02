@@ -1,0 +1,9 @@
+setup: ok
+concurrent: writer1 writer2
+writer1: ok
+writer2: ok
+verify:
+id	name
+1	same
+1	same
+(2 rows)

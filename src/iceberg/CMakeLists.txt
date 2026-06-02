@@ -315,6 +315,10 @@ if(ICEBERG_BUILD_BUNDLE)
   add_subdirectory(parquet)
 endif()
 
+if(ICEBERG_BUILD_CLI)
+  add_subdirectory(cli)
+endif()
+
 iceberg_install_cmake_package(iceberg iceberg_targets)
 
 if(ICEBERG_BUILD_TESTS)

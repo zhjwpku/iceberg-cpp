@@ -32,6 +32,8 @@ set(ICEBERG_ARROW_INSTALL_INTERFACE_LIBS)
 # ICEBERG_CROARING_URL       - CRoaring tarball URL
 # ICEBERG_NLOHMANN_JSON_URL  - nlohmann-json tarball URL
 # ICEBERG_CPR_URL            - cpr tarball URL
+# ICEBERG_LINENOISE_GIT_URL  - linenoise git repository URL
+# ICEBERG_LIBPG_QUERY_GIT_URL - libpg_query git repository URL
 #
 # Example usage:
 #   export ICEBERG_ARROW_URL="https://your-mirror.com/apache-arrow-24.0.0.tar.gz"
@@ -512,6 +514,97 @@ function(resolve_cpr_dependency)
 endfunction()
 
 # ----------------------------------------------------------------------
+# linenoise
+
+function(resolve_linenoise_dependency)
+  prepare_fetchcontent()
+
+  if(DEFINED ENV{ICEBERG_LINENOISE_GIT_URL})
+    set(LINENOISE_GIT_REPOSITORY "$ENV{ICEBERG_LINENOISE_GIT_URL}")
+  else()
+    set(LINENOISE_GIT_REPOSITORY "https://github.com/antirez/linenoise.git")
+  endif()
+
+  set(FETCHCONTENT_UPDATES_DISCONNECTED_LINENOISE ON)
+  fetchcontent_declare(linenoise
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       GIT_REPOSITORY ${LINENOISE_GIT_REPOSITORY}
+                       GIT_TAG 1.0)
+  fetchcontent_makeavailable(linenoise)
+
+  if(linenoise_SOURCE_DIR)
+    if(NOT TARGET linenoise_static)
+      add_library(linenoise_static STATIC "${linenoise_SOURCE_DIR}/linenoise.c")
+      target_include_directories(linenoise_static PUBLIC "${linenoise_SOURCE_DIR}")
+      set_target_properties(linenoise_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+    set(LINENOISE_VENDORED TRUE)
+  else()
+    set(LINENOISE_VENDORED FALSE)
+  endif()
+
+  set(LINENOISE_VENDORED
+      ${LINENOISE_VENDORED}
+      PARENT_SCOPE)
+endfunction()
+
+# ----------------------------------------------------------------------
+# libpg_query
+
+function(resolve_libpg_query_dependency)
+  prepare_fetchcontent()
+  include(ExternalProject)
+
+  if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+  endif()
+
+  if(DEFINED ENV{ICEBERG_LIBPG_QUERY_GIT_URL})
+    set(LIBPG_QUERY_GIT_REPOSITORY "$ENV{ICEBERG_LIBPG_QUERY_GIT_URL}")
+  else()
+    set(LIBPG_QUERY_GIT_REPOSITORY "https://github.com/pganalyze/libpg_query.git")
+  endif()
+
+  set(FETCHCONTENT_UPDATES_DISCONNECTED_LIBPG_QUERY ON)
+  fetchcontent_declare(libpg_query
+                       ${FC_DECLARE_COMMON_OPTIONS}
+                       GIT_REPOSITORY ${LIBPG_QUERY_GIT_REPOSITORY}
+                       GIT_TAG 17-latest)
+  fetchcontent_getproperties(libpg_query)
+  if(NOT libpg_query_POPULATED)
+    fetchcontent_populate(libpg_query)
+  endif()
+
+  set(LIBPG_QUERY_LIBRARY "${libpg_query_SOURCE_DIR}/libpg_query.a")
+  find_program(MAKE_EXECUTABLE NAMES make gmake REQUIRED)
+
+  if(NOT TARGET libpg_query_external)
+    externalproject_add(libpg_query_external
+                        SOURCE_DIR "${libpg_query_SOURCE_DIR}"
+                        BINARY_DIR "${libpg_query_SOURCE_DIR}"
+                        CONFIGURE_COMMAND ""
+                        BUILD_COMMAND "${CMAKE_COMMAND}" -E env CCACHE_DISABLE=1
+                                      "${MAKE_EXECUTABLE}" -C "${libpg_query_SOURCE_DIR}"
+                                      libpg_query.a
+                        BUILD_BYPRODUCTS "${LIBPG_QUERY_LIBRARY}"
+                        INSTALL_COMMAND "")
+  endif()
+
+  if(NOT TARGET pg_query_static)
+    add_library(pg_query_static STATIC IMPORTED GLOBAL)
+    set_target_properties(pg_query_static
+                          PROPERTIES IMPORTED_LOCATION "${LIBPG_QUERY_LIBRARY}"
+                                     INTERFACE_INCLUDE_DIRECTORIES
+                                     "${libpg_query_SOURCE_DIR}")
+    add_dependencies(pg_query_static libpg_query_external)
+  endif()
+
+  set(LIBPG_QUERY_VENDORED
+      TRUE
+      PARENT_SCOPE)
+endfunction()
+
+# ----------------------------------------------------------------------
 # Zstd
 
 function(resolve_zstd_dependency)
@@ -538,4 +631,12 @@ endif()
 
 if(ICEBERG_BUILD_REST)
   resolve_cpr_dependency()
+endif()
+
+if(ICEBERG_BUILD_CLI)
+  if(NOT CMAKE_C_COMPILER_LOADED)
+    enable_language(C)
+  endif()
+  resolve_linenoise_dependency()
+  resolve_libpg_query_dependency()
 endif()

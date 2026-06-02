@@ -1,0 +1,18 @@
+-- RUN: %run_cli_isolation_case -DISOLATION_FILE=%s -DEXPECTED_FILE=%S/../expected/concurrent_identical_inserts.out -DCASE_NAME=concurrent_identical_inserts -DWORK_DIR=%t.work -P %S/../run_cli_isolation_case.cmake
+
+setup:
+CREATE TABLE t (
+  id INT NOT NULL,
+  name TEXT
+);
+
+session writer1:
+INSERT INTO t VALUES (1, 'same');
+
+session writer2:
+INSERT INTO t VALUES (1, 'same');
+
+concurrent: writer1 writer2
+
+verify:
+SELECT id, name FROM t;

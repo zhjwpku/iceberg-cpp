@@ -1,0 +1,8 @@
+created table t
+inserted 2 rows into t
+ScanTasks: 1
+  [0] file=<warehouse>/t/data/insert-<uuid>.parquet rows=2 bytes=695 delete_files=0
+id	name	score
+1	alice	10.5
+2	bob	20.25
+(2 rows)
