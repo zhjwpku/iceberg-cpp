@@ -301,15 +301,38 @@ TEST_F(SnapshotUtilTest, SchemaForBranch) {
   ICEBERG_UNWRAP_OR_FAIL(auto initial_schema, table_->schema());
   ASSERT_NE(initial_schema, nullptr);
 
+  auto branch_schema = std::make_shared<Schema>(
+      std::vector<SchemaField>{SchemaField::MakeRequired(1, "id", int32()),
+                               SchemaField::MakeRequired(2, "data", string()),
+                               SchemaField::MakeOptional(3, "branch_only", string())},
+      1);
+  table_->metadata()->schemas.push_back(branch_schema);
+  ICEBERG_UNWRAP_OR_FAIL(auto branch_snapshot, table_->SnapshotById(branch_snapshot_id_));
+  branch_snapshot->schema_id = branch_schema->schema_id();
+
   std::string branch = "b1";
   ICEBERG_UNWRAP_OR_FAIL(auto schema, SnapshotUtil::SchemaFor(*table_, branch));
-  // Branch should return current schema (not snapshot schema)
+  EXPECT_EQ(schema->schema_id(), initial_schema->schema_id());
   EXPECT_EQ(schema->fields().size(), initial_schema->fields().size());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata_schema,
+                         SnapshotUtil::SchemaFor(*table_->metadata(), branch));
+  EXPECT_EQ(metadata_schema->schema_id(), initial_schema->schema_id());
+  EXPECT_EQ(metadata_schema->fields().size(), initial_schema->fields().size());
 }
 
 TEST_F(SnapshotUtilTest, SchemaForTag) {
   // Create a tag pointing to base snapshot
   auto metadata = table_->metadata();
+  auto tag_schema = std::make_shared<Schema>(
+      std::vector<SchemaField>{SchemaField::MakeRequired(1, "id", int32()),
+                               SchemaField::MakeRequired(2, "data", string()),
+                               SchemaField::MakeOptional(3, "tag_only", string())},
+      1);
+  metadata->schemas.push_back(tag_schema);
+  ICEBERG_UNWRAP_OR_FAIL(auto base_snapshot, table_->SnapshotById(base_snapshot_id_));
+  base_snapshot->schema_id = tag_schema->schema_id();
+
   std::string tag = "tag1";
   metadata->refs[tag] = std::make_shared<SnapshotRef>(
       SnapshotRef{.snapshot_id = base_snapshot_id_, .retention = SnapshotRef::Tag{}});
@@ -318,9 +341,14 @@ TEST_F(SnapshotUtilTest, SchemaForTag) {
   ASSERT_NE(initial_schema, nullptr);
 
   ICEBERG_UNWRAP_OR_FAIL(auto schema, SnapshotUtil::SchemaFor(*table_, tag));
-  // Tag should return the schema of the snapshot it points to
-  // Since base snapshot has schema_id = 0, it should return the same schema
-  EXPECT_EQ(schema->fields().size(), initial_schema->fields().size());
+  EXPECT_EQ(schema->schema_id(), tag_schema->schema_id());
+  EXPECT_EQ(schema->fields().size(), tag_schema->fields().size());
+  EXPECT_NE(schema->fields().size(), initial_schema->fields().size());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto metadata_schema,
+                         SnapshotUtil::SchemaFor(*table_->metadata(), tag));
+  EXPECT_EQ(metadata_schema->schema_id(), tag_schema->schema_id());
+  EXPECT_EQ(metadata_schema->fields().size(), tag_schema->fields().size());
 }
 
 TEST_F(SnapshotUtilTest, SnapshotAfter) {
