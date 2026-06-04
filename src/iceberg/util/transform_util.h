@@ -21,7 +21,6 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 
 #include "iceberg/iceberg_export.h"
 
@@ -126,9 +125,6 @@ class ICEBERG_EXPORT TransformUtil {
   /// \param timestamp_nanos the timestamp in nanoseconds.
   /// \return a string representation of this timestamp.
   static std::string HumanTimestampNsWithZone(int64_t timestamp_nanos);
-
-  /// \brief Base64 encode a string
-  static std::string Base64Encode(std::string_view str_to_encode);
 };
 
 }  // namespace iceberg

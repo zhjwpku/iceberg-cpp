@@ -152,30 +152,4 @@ TEST(TransformUtilTest, HumanTimestampNsWithZone) {
   EXPECT_EQ("1969-12-31T23:59:59.123456789+00:00",
             TransformUtil::HumanTimestampNsWithZone(-876543211));
 }
-
-TEST(TransformUtilTest, Base64Encode) {
-  // Empty string
-  EXPECT_EQ("", TransformUtil::Base64Encode(""));
-
-  // Single character
-  EXPECT_EQ("YQ==", TransformUtil::Base64Encode("a"));
-  EXPECT_EQ("YWI=", TransformUtil::Base64Encode("ab"));
-  EXPECT_EQ("YWJj", TransformUtil::Base64Encode("abc"));
-
-  // Multiple of 3 characters
-  EXPECT_EQ("YWJjZGU=", TransformUtil::Base64Encode("abcde"));
-  EXPECT_EQ("YWJjZGVm", TransformUtil::Base64Encode("abcdef"));
-
-  // Common strings
-  EXPECT_EQ("U29tZSBkYXRhIHdpdGggY2hhcmFjdGVycw==",
-            TransformUtil::Base64Encode("Some data with characters"));
-  EXPECT_EQ("aGVsbG8=", TransformUtil::Base64Encode("hello"));
-  EXPECT_EQ("dGVzdCBzdHJpbmc=", TransformUtil::Base64Encode("test string"));
-
-  // Unicode
-  EXPECT_EQ("8J+EgA==", TransformUtil::Base64Encode("\xF0\x9F\x84\x80"));
-  // Null byte
-  EXPECT_EQ("AA==", TransformUtil::Base64Encode({"\x00", 1}));
-}
-
 }  // namespace iceberg

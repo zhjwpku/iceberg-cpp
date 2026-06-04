@@ -19,7 +19,6 @@
 
 #include "iceberg/util/transform_util.h"
 
-#include <array>
 #include <chrono>
 #include <format>
 
@@ -137,55 +136,6 @@ std::string TransformUtil::HumanTimestampNsWithZone(int64_t timestamp_nanos) {
   } else {
     return std::format("{:%FT%T}.{:09d}+00:00", tp, nanos);
   }
-}
-
-std::string TransformUtil::Base64Encode(std::string_view str_to_encode) {
-  static constexpr std::string_view kBase64Chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  int32_t i = 0;
-  int32_t j = 0;
-  std::array<unsigned char, 3> char_array_3;
-  std::array<unsigned char, 4> char_array_4;
-
-  std::string encoded;
-  encoded.reserve((str_to_encode.size() + 2) * 4 / 3);
-
-  for (unsigned char byte : str_to_encode) {
-    char_array_3[i++] = byte;
-    if (i == 3) {
-      char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-      char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-      char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-      char_array_4[3] = char_array_3[2] & 0x3f;
-
-      for (j = 0; j < 4; j++) {
-        encoded += kBase64Chars[char_array_4[j]];
-      }
-
-      i = 0;
-    }
-  }
-
-  if (i) {
-    for (j = i; j < 3; j++) {
-      char_array_3[j] = '\0';
-    }
-
-    char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-    char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-    char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-    char_array_4[3] = char_array_3[2] & 0x3f;
-
-    for (j = 0; j < i + 1; j++) {
-      encoded += kBase64Chars[char_array_4[j]];
-    }
-
-    while (i++ < 3) {
-      encoded += '=';
-    }
-  }
-
-  return encoded;
 }
 
 }  // namespace iceberg
