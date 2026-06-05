@@ -114,6 +114,7 @@ set(ICEBERG_SOURCES
     util/snapshot_util.cc
     util/string_util.cc
     util/struct_like_set.cc
+    util/task_group.cc
     util/temporal_util.cc
     util/timepoint.cc
     util/transform_util.cc
