@@ -593,6 +593,7 @@ Result<UpdateSchema::ApplyResult> UpdateSchema::Apply() {
   ICEBERG_ASSIGN_OR_RAISE(
       auto new_schema,
       Schema::Make(std::move(new_fields), schema_->schema_id(), fresh_identifier_ids));
+  ICEBERG_RETURN_UNEXPECTED(new_schema->Validate(base().format_version));
 
   std::unordered_map<std::string, std::string> updated_props;
   const auto& base_metadata = base();

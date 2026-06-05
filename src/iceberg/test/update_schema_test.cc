@@ -20,6 +20,7 @@
 #include "iceberg/update/update_schema.h"
 
 #include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -1052,6 +1053,40 @@ TEST_F(UpdateSchemaTest, UpdateColumnFloatToDouble) {
   ICEBERG_UNWRAP_OR_FAIL(auto field_opt, result.schema->FindFieldByName("value"));
   ASSERT_TRUE(field_opt.has_value());
   EXPECT_EQ(*field_opt->get().type(), *float64());
+}
+
+TEST_F(UpdateSchemaTest, UpdateColumnUnknownToPrimitive) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateSchema());
+  update->AddColumn("mystery", unknown(), "A null-only placeholder");
+  update->UpdateColumn("mystery", string());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto field_opt, result.schema->FindFieldByName("mystery"));
+  ASSERT_TRUE(field_opt.has_value());
+  EXPECT_EQ(*field_opt->get().type(), *string());
+  EXPECT_TRUE(field_opt->get().optional());
+  EXPECT_EQ(field_opt->get().doc(), "A null-only placeholder");
+}
+
+TEST_F(UpdateSchemaTest, AddRequiredUnknownColumnFails) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateSchema());
+  update->AllowIncompatibleChanges().AddRequiredColumn("mystery", unknown());
+
+  auto result = update->Apply();
+  EXPECT_THAT(result, IsError(ErrorKind::kInvalidArgument));
+  EXPECT_THAT(result, HasErrorMessage("Unknown type field 'mystery' must be optional"));
+}
+
+TEST_F(UpdateSchemaTest, AddColumnWithRequiredNestedUnknownFails) {
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateSchema());
+  update->AddColumn("profile", struct_({
+                                   SchemaField::MakeRequired(3, "mystery", unknown()),
+                               }));
+
+  auto result = update->Apply();
+  EXPECT_THAT(result, IsError(ErrorKind::kInvalidArgument));
+  EXPECT_THAT(result, HasErrorMessage("Unknown type field 'mystery' must be optional"));
 }
 
 TEST_F(UpdateSchemaTest, UpdateColumnSameType) {

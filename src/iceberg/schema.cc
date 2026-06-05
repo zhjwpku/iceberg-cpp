@@ -35,6 +35,44 @@
 
 namespace iceberg {
 
+namespace {
+
+Status ValidateFieldNullability(const Type& type) {
+  auto validate_field = [&](const SchemaField& field) -> Status {
+    ICEBERG_PRECHECK(field.optional() || field.type()->type_id() != TypeId::kUnknown,
+                     "Unknown type field '{}' must be optional", field.name());
+    return ValidateFieldNullability(*field.type());
+  };
+
+  switch (type.type_id()) {
+    case TypeId::kStruct: {
+      const auto& struct_type = static_cast<const StructType&>(type);
+      for (const auto& field : struct_type.fields()) {
+        ICEBERG_RETURN_UNEXPECTED(validate_field(field));
+      }
+      return {};
+    }
+    case TypeId::kList: {
+      const auto& list_type = static_cast<const ListType&>(type);
+      const auto& element = list_type.element();
+      return validate_field(element);
+    }
+    case TypeId::kMap: {
+      const auto& map_type = static_cast<const MapType&>(type);
+      const auto& key = map_type.key();
+      const auto& value = map_type.value();
+      ICEBERG_PRECHECK(key.type()->type_id() != TypeId::kUnknown,
+                       "Map 'key' cannot be unknown type");
+      ICEBERG_RETURN_UNEXPECTED(ValidateFieldNullability(*key.type()));
+      return validate_field(value);
+    }
+    default:
+      return {};
+  }
+}
+
+}  // namespace
+
 Schema::Schema(std::vector<SchemaField> fields, int32_t schema_id)
     : StructType(std::move(fields)),
       schema_id_(schema_id),
@@ -282,6 +320,8 @@ bool Schema::SameSchema(const Schema& other) const {
 }
 
 Status Schema::Validate(int32_t format_version) const {
+  ICEBERG_RETURN_UNEXPECTED(ValidateFieldNullability(*this));
+
   // Get all fields including nested ones
   ICEBERG_ASSIGN_OR_RAISE(auto id_to_field, cache_->GetIdToFieldMap());
 
