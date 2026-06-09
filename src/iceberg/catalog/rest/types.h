@@ -23,13 +23,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "iceberg/catalog/rest/endpoint.h"
 #include "iceberg/catalog/rest/iceberg_rest_export.h"
 #include "iceberg/result.h"
-#include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
 #include "iceberg/type_fwd.h"
 #include "iceberg/util/macros.h"
@@ -38,6 +38,17 @@
 /// Request and response types for Iceberg REST Catalog API.
 
 namespace iceberg::rest {
+
+/// \brief Status of a REST server-side scan planning operation.
+enum class PlanStatus {
+  kSubmitted,
+  kCompleted,
+  kCancelled,
+  kFailed,
+};
+
+ICEBERG_REST_EXPORT std::string_view ToString(PlanStatus status);
+ICEBERG_REST_EXPORT Result<PlanStatus> PlanStatusFromString(std::string_view status_str);
 
 /// \brief Server-provided configuration for the catalog.
 struct ICEBERG_REST_EXPORT CatalogConfig {
@@ -293,6 +304,74 @@ struct ICEBERG_REST_EXPORT OAuthTokenResponse {
   Status Validate() const;
 
   bool operator==(const OAuthTokenResponse&) const = default;
+};
+
+/// \brief Request to initiate a server-side scan planning operation.
+struct ICEBERG_REST_EXPORT PlanTableScanRequest {
+  std::optional<int64_t> snapshot_id;
+  std::vector<std::string> select;
+  std::shared_ptr<Expression> filter;
+  bool case_sensitive = true;
+  bool use_snapshot_schema = false;
+  std::optional<int64_t> start_snapshot_id;
+  std::optional<int64_t> end_snapshot_id;
+  std::vector<std::string> stats_fields;
+  std::optional<int64_t> min_rows_requested;
+
+  Status Validate() const;
+
+  bool operator==(const PlanTableScanRequest&) const;
+};
+
+/// \brief Response from initiating a scan planning operation, including plan status and
+/// initial scan tasks.
+struct ICEBERG_REST_EXPORT PlanTableScanResponse {
+  std::optional<std::vector<std::string>> plan_tasks;
+  std::optional<std::vector<std::shared_ptr<FileScanTask>>> file_scan_tasks;
+  std::vector<std::shared_ptr<DataFile>> delete_files;
+  PlanStatus plan_status = PlanStatus::kCompleted;
+  std::string plan_id;
+  std::optional<ErrorResponse> error;
+  // TODO(sandeepg): Add credentials.
+
+  Status Validate() const;
+
+  bool operator==(const PlanTableScanResponse&) const;
+};
+
+/// \brief Response from polling an asynchronous scan plan, including current status and
+/// available scan tasks.
+struct ICEBERG_REST_EXPORT FetchPlanningResultResponse {
+  std::optional<std::vector<std::string>> plan_tasks;
+  std::optional<std::vector<std::shared_ptr<FileScanTask>>> file_scan_tasks;
+  std::vector<std::shared_ptr<DataFile>> delete_files;
+  PlanStatus plan_status = PlanStatus::kCompleted;
+  std::optional<ErrorResponse> error;
+  // TODO(sandeepg): Add credentials.
+
+  Status Validate() const;
+
+  bool operator==(const FetchPlanningResultResponse&) const;
+};
+
+/// \brief Request to fetch the scan tasks for a given plan task token.
+struct ICEBERG_REST_EXPORT FetchScanTasksRequest {
+  std::string planTask;
+
+  Status Validate() const;
+
+  bool operator==(const FetchScanTasksRequest&) const;
+};
+
+/// \brief Response containing the file scan tasks for a given plan task token.
+struct ICEBERG_REST_EXPORT FetchScanTasksResponse {
+  std::optional<std::vector<std::string>> plan_tasks;
+  std::optional<std::vector<std::shared_ptr<FileScanTask>>> file_scan_tasks;
+  std::vector<std::shared_ptr<DataFile>> delete_files;
+
+  Status Validate() const;
+
+  bool operator==(const FetchScanTasksResponse&) const;
 };
 
 }  // namespace iceberg::rest
