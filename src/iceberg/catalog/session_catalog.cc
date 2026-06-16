@@ -17,31 +17,12 @@
  * under the License.
  */
 
-#pragma once
+#include "iceberg/catalog/session_catalog.h"
 
-/// \file iceberg/catalog/rest/type_fwd.h
-/// Forward declarations and enum definitions for Iceberg REST API types.
+namespace iceberg {
 
-namespace iceberg::rest {
+SessionCatalog::SessionCatalog() = default;
 
-struct ErrorResponse;
-struct CommitTableResponse;
-struct LoadTableResult;
-struct OAuthTokenResponse;
+SessionCatalog::~SessionCatalog() = default;
 
-class Endpoint;
-class ErrorHandler;
-class HttpClient;
-class ResourcePaths;
-class RestCatalog;
-class RestCatalogProperties;
-
-}  // namespace iceberg::rest
-
-namespace iceberg::rest::auth {
-
-class AuthManager;
-class AuthProperties;
-class AuthSession;
-
-}  // namespace iceberg::rest::auth
+}  // namespace iceberg
