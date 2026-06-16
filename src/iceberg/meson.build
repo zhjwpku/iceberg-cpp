@@ -294,6 +294,7 @@ install_headers(
 subdir('catalog')
 subdir('data')
 subdir('deletes')
+subdir('encryption')
 subdir('expression')
 subdir('manifest')
 subdir('metrics')

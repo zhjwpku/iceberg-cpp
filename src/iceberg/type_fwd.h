@@ -245,10 +245,7 @@ class HistoryTable;
 class MetadataTable;
 class SnapshotsTable;
 
-/// ----------------------------------------------------------------------------
-/// TODO: Forward declarations below are not added yet.
-/// ----------------------------------------------------------------------------
-
-class EncryptedKey;
+/// \brief Table encryption
+struct EncryptedKey;
 
 }  // namespace iceberg
