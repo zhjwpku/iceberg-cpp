@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "iceberg/file_io.h"
 #include "iceberg/table.h"
 #include "iceberg/table_identifier.h"
 #include "iceberg/table_metadata.h"
@@ -511,7 +512,22 @@ Result<bool> InMemoryCatalog::TableExists(const TableIdentifier& identifier) con
 
 Status InMemoryCatalog::DropTable(const TableIdentifier& identifier, bool purge) {
   std::unique_lock lock(mutex_);
-  // TODO(Guotao): Delete all metadata files if purge is true.
+  if (purge && file_io_) {
+    ICEBERG_ASSIGN_OR_RAISE(auto metadata_location,
+                            root_namespace_->GetTableMetadataLocation(identifier));
+    ICEBERG_ASSIGN_OR_RAISE(auto metadata,
+                            TableMetadataUtil::Read(*file_io_, metadata_location));
+    // Delete previous metadata files from the log first, so that if deletion
+    // fails and is retried, the current metadata file still exists as an
+    // anchor to locate any remaining old files.
+    std::vector<std::string> files_to_delete;
+    files_to_delete.reserve(metadata->metadata_log.size());
+    for (const auto& entry : metadata->metadata_log) {
+      files_to_delete.push_back(entry.metadata_file);
+    }
+    std::ignore = file_io_->DeleteFiles(files_to_delete);
+    std::ignore = file_io_->DeleteFile(metadata_location);
+  }
   return root_namespace_->UnregisterTable(identifier);
 }
 
