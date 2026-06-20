@@ -33,6 +33,7 @@
 #include "iceberg/transaction.h"
 #include "iceberg/update/expire_snapshots.h"
 #include "iceberg/update/fast_append.h"
+#include "iceberg/update/merge_append.h"
 #include "iceberg/update/set_snapshot.h"
 #include "iceberg/update/snapshot_manager.h"
 #include "iceberg/update/update_location.h"
@@ -217,6 +218,12 @@ Result<std::shared_ptr<FastAppend>> Table::NewFastAppend() {
   return FastAppend::Make(name().name, std::move(ctx));
 }
 
+Result<std::shared_ptr<MergeAppend>> Table::NewMergeAppend() {
+  ICEBERG_ASSIGN_OR_RAISE(
+      auto ctx, TransactionContext::Make(shared_from_this(), TransactionKind::kUpdate));
+  return MergeAppend::Make(name().name, std::move(ctx));
+}
+
 Result<std::shared_ptr<UpdateStatistics>> Table::NewUpdateStatistics() {
   ICEBERG_ASSIGN_OR_RAISE(
       auto ctx, TransactionContext::Make(shared_from_this(), TransactionKind::kUpdate));
@@ -314,6 +321,10 @@ StaticTable::NewUpdatePartitionStatistics() {
 
 Result<std::shared_ptr<FastAppend>> StaticTable::NewFastAppend() {
   return NotSupported("Cannot create a fast append for a static table");
+}
+
+Result<std::shared_ptr<MergeAppend>> StaticTable::NewMergeAppend() {
+  return NotSupported("Cannot create a merge append for a static table");
 }
 
 Result<std::shared_ptr<SnapshotManager>> StaticTable::NewSnapshotManager() {
