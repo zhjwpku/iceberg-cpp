@@ -74,6 +74,7 @@ iceberg_sources = files(
     'inspect/snapshots_table.cc',
     'json_serde.cc',
     'location_provider.cc',
+    'logging/logger.cc',
     'manifest/manifest_adapter.cc',
     'manifest/manifest_entry.cc',
     'manifest/manifest_filter_manager.cc',
