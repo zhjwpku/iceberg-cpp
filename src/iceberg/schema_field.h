@@ -46,8 +46,14 @@ class ICEBERG_EXPORT SchemaField : public iceberg::util::Formattable {
   /// \param[in] type The field type.
   /// \param[in] optional Whether values of this field are required or nullable.
   /// \param[in] doc Optional documentation string for the field.
+  /// \param[in] initial_default The v3 `initial-default` value, or null if absent. The
+  /// field shares ownership of the (immutable) value.
+  /// \param[in] write_default The v3 `write-default` value, or null if absent. The field
+  /// shares ownership of the (immutable) value.
   SchemaField(int32_t field_id, std::string_view name, std::shared_ptr<Type> type,
-              bool optional, std::string_view doc = {});
+              bool optional, std::string_view doc = {},
+              std::shared_ptr<const Literal> initial_default = nullptr,
+              std::shared_ptr<const Literal> write_default = nullptr);
 
   /// \brief Construct an optional (nullable) field.
   static SchemaField MakeOptional(int32_t field_id, std::string_view name,
@@ -70,6 +76,14 @@ class ICEBERG_EXPORT SchemaField : public iceberg::util::Formattable {
 
   /// \brief Get the field documentation.
   std::string_view doc() const;
+
+  /// \brief Get the owning pointer to the default value for this field used when reading
+  /// rows written before the field existed (v3 `initial-default`), or null if absent.
+  const std::shared_ptr<const Literal>& initial_default() const;
+
+  /// \brief Get the owning pointer to the default value for this field used when a writer
+  /// does not supply a value (v3 `write-default`), or null if absent.
+  const std::shared_ptr<const Literal>& write_default() const;
 
   [[nodiscard]] std::string ToString() const override;
 
@@ -100,6 +114,9 @@ class ICEBERG_EXPORT SchemaField : public iceberg::util::Formattable {
   std::shared_ptr<Type> type_;
   bool optional_;
   std::string doc_;
+  // Immutable default values, shared (not deep-copied) across field copies, like `type_`.
+  std::shared_ptr<const Literal> initial_default_;
+  std::shared_ptr<const Literal> write_default_;
 };
 
 }  // namespace iceberg
