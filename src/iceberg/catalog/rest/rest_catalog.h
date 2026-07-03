@@ -30,6 +30,7 @@
 #include "iceberg/catalog/rest/type_fwd.h"
 #include "iceberg/catalog/session_catalog.h"
 #include "iceberg/catalog/session_context.h"
+#include "iceberg/metrics/metrics_reporter.h"
 #include "iceberg/result.h"
 #include "iceberg/storage_credential.h"
 
@@ -62,13 +63,15 @@ class ICEBERG_REST_EXPORT RestCatalog final
  private:
   class ContextCatalog;
   class TableScopedCatalog;
+  friend class RestMetricsReporter;
 
   RestCatalog(RestCatalogProperties config, std::shared_ptr<FileIO> file_io,
               std::unique_ptr<HttpClient> client, std::unique_ptr<ResourcePaths> paths,
               std::unordered_set<Endpoint> endpoints,
               std::unique_ptr<auth::AuthManager> auth_manager,
               std::shared_ptr<auth::AuthSession> catalog_session,
-              SnapshotMode snapshot_mode, SessionContext default_context);
+              SnapshotMode snapshot_mode, SessionContext default_context,
+              std::shared_ptr<MetricsReporter> metrics_reporter);
 
   Result<std::shared_ptr<auth::AuthSession>> ContextualAuthSession(
       const SessionContext& context);
@@ -82,6 +85,13 @@ class ICEBERG_REST_EXPORT RestCatalog final
       const SessionContext& context,
       const std::unordered_map<std::string, std::string>& table_config,
       const std::vector<StorageCredential>& storage_credentials) const;
+
+  Result<std::shared_ptr<MetricsReporter>> TableMetricsReporter(
+      const TableIdentifier& identifier,
+      std::shared_ptr<auth::AuthSession> table_session) const;
+
+  Status ReportMetrics(const TableIdentifier& identifier, const MetricsReport& report,
+                       auth::AuthSession& session) const;
 
   Result<std::vector<Namespace>> ListNamespaces(const Namespace& ns,
                                                 auth::AuthSession& session) const;
@@ -183,6 +193,7 @@ class ICEBERG_REST_EXPORT RestCatalog final
   std::shared_ptr<auth::AuthSession> catalog_session_;
   SnapshotMode snapshot_mode_;
   SessionContext default_context_;
+  std::shared_ptr<MetricsReporter> metrics_reporter_;
   std::weak_ptr<Catalog> default_catalog_;
 };
 

@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -35,6 +36,8 @@
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/manifest/manifest_reader.h"
 #include "iceberg/manifest/manifest_writer.h"
+#include "iceberg/metrics/commit_report.h"
+#include "iceberg/metrics/metrics_reporter.h"
 #include "iceberg/partition_spec.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
@@ -64,6 +67,16 @@ class TestSnapshotUpdate : public SnapshotUpdate {
     return std::vector<ManifestFile>{};
   }
   std::unordered_map<std::string, std::string> Summary() override { return {}; }
+};
+
+class CollectingMetricsReporter final : public MetricsReporter {
+ public:
+  Status Report(const MetricsReport& report) override {
+    reports.push_back(report);
+    return {};
+  }
+
+  std::vector<MetricsReport> reports;
 };
 
 }  // namespace
@@ -168,6 +181,38 @@ TEST_F(FastAppendTest, AppendDataFile) {
   EXPECT_EQ(snapshot->summary.at(SnapshotSummaryFields::kManifestsCreated), "1");
   EXPECT_EQ(snapshot->summary.at(SnapshotSummaryFields::kManifestsKept), "0");
   EXPECT_EQ(snapshot->summary.at(SnapshotSummaryFields::kManifestsReplaced), "0");
+}
+
+TEST_F(FastAppendTest, ReportsCommitMetrics) {
+  auto reporter = std::make_shared<CollectingMetricsReporter>();
+  ICEBERG_UNWRAP_OR_FAIL(auto reporting_table,
+                         Table::Make(table_->name(), table_->metadata(),
+                                     std::string(table_->metadata_file_location()),
+                                     table_->io(), table_->catalog(), reporter));
+
+  std::shared_ptr<FastAppend> fast_append;
+  ICEBERG_UNWRAP_OR_FAIL(fast_append, reporting_table->NewFastAppend());
+  fast_append->AppendFile(file_a_);
+
+  EXPECT_THAT(fast_append->Commit(), IsOk());
+
+  ASSERT_EQ(reporter->reports.size(), 1U);
+  ASSERT_TRUE(std::holds_alternative<CommitReport>(reporter->reports[0]));
+  const auto& report = std::get<CommitReport>(reporter->reports[0]);
+  EXPECT_EQ(report.table_name, ToString(table_ident_));
+  EXPECT_NE(report.snapshot_id, kInvalidSnapshotId);
+  EXPECT_GT(report.sequence_number, 0);
+  EXPECT_EQ(report.operation, DataOperation::kAppend);
+  ASSERT_TRUE(report.commit_metrics.total_duration.has_value());
+  EXPECT_EQ(report.commit_metrics.total_duration->count, 1);
+  ASSERT_TRUE(report.commit_metrics.attempts.has_value());
+  EXPECT_EQ(report.commit_metrics.attempts->value, 1);
+  ASSERT_TRUE(report.commit_metrics.added_data_files.has_value());
+  EXPECT_EQ(report.commit_metrics.added_data_files->value, 1);
+  ASSERT_TRUE(report.commit_metrics.added_records.has_value());
+  EXPECT_EQ(report.commit_metrics.added_records->value, 100);
+  ASSERT_TRUE(report.commit_metrics.added_files_size_bytes.has_value());
+  EXPECT_EQ(report.commit_metrics.added_files_size_bytes->value, 1024);
 }
 
 TEST_F(FastAppendTest, AppendMultipleDataFiles) {

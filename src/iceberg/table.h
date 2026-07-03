@@ -43,11 +43,11 @@ class ICEBERG_EXPORT Table : public std::enable_shared_from_this<Table> {
   /// \param[in] metadata_location The location of the table metadata file.
   /// \param[in] io The FileIO to read and write table data and metadata files.
   /// \param[in] catalog The catalog that this table belongs to.
-  static Result<std::shared_ptr<Table>> Make(TableIdentifier identifier,
-                                             std::shared_ptr<TableMetadata> metadata,
-                                             std::string metadata_location,
-                                             std::shared_ptr<FileIO> io,
-                                             std::shared_ptr<Catalog> catalog);
+  static Result<std::shared_ptr<Table>> Make(
+      TableIdentifier identifier, std::shared_ptr<TableMetadata> metadata,
+      std::string metadata_location, std::shared_ptr<FileIO> io,
+      std::shared_ptr<Catalog> catalog,
+      std::shared_ptr<MetricsReporter> metrics_reporter = nullptr);
 
   virtual ~Table();
 
@@ -116,6 +116,9 @@ class ICEBERG_EXPORT Table : public std::enable_shared_from_this<Table> {
 
   /// \brief Returns the catalog that this table belongs to
   const std::shared_ptr<Catalog>& catalog() const;
+
+  /// \brief Returns the metrics reporter configured for this table, if any.
+  const std::shared_ptr<MetricsReporter>& metrics_reporter() const;
 
   /// \brief Returns a LocationProvider for this table
   Result<std::unique_ptr<LocationProvider>> location_provider() const;
@@ -198,13 +201,15 @@ class ICEBERG_EXPORT Table : public std::enable_shared_from_this<Table> {
  protected:
   Table(TableIdentifier identifier, std::shared_ptr<TableMetadata> metadata,
         std::string metadata_location, std::shared_ptr<FileIO> io,
-        std::shared_ptr<Catalog> catalog);
+        std::shared_ptr<Catalog> catalog,
+        std::shared_ptr<MetricsReporter> metrics_reporter = nullptr);
 
   const TableIdentifier identifier_;
   std::shared_ptr<TableMetadata> metadata_;
   std::string metadata_location_;
   std::shared_ptr<FileIO> io_;
   std::shared_ptr<Catalog> catalog_;
+  std::shared_ptr<MetricsReporter> metrics_reporter_;
   std::unique_ptr<class TableMetadataCache> metadata_cache_;
 };
 
@@ -214,7 +219,8 @@ class ICEBERG_EXPORT StagedTable final : public Table {
   static Result<std::shared_ptr<StagedTable>> Make(
       TableIdentifier identifier, std::shared_ptr<TableMetadata> metadata,
       std::string metadata_location, std::shared_ptr<FileIO> io,
-      std::shared_ptr<Catalog> catalog);
+      std::shared_ptr<Catalog> catalog,
+      std::shared_ptr<MetricsReporter> metrics_reporter = nullptr);
 
   ~StagedTable() override;
 

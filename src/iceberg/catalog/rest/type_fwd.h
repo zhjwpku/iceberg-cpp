@@ -35,6 +35,7 @@ class HttpClient;
 class ResourcePaths;
 class RestCatalog;
 class RestCatalogProperties;
+class RestMetricsReporter;
 
 }  // namespace iceberg::rest
 

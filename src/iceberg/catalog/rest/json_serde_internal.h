@@ -63,6 +63,12 @@ ICEBERG_DECLARE_JSON_SERDE(OAuthTokenResponse)
 
 #undef ICEBERG_DECLARE_JSON_SERDE
 
+ICEBERG_REST_EXPORT Result<ReportMetricsRequest> ReportMetricsRequestFromJson(
+    const nlohmann::json& json);
+template <>
+ICEBERG_REST_EXPORT Result<ReportMetricsRequest> FromJson(const nlohmann::json& json);
+ICEBERG_REST_EXPORT Result<nlohmann::json> ToJson(const ReportMetricsRequest& request);
+
 // These models embed a Schema/TableMetadata whose ToJson returns Result, so their own
 // ToJson returns Result too. FromJson is declared like the macro-based models above.
 ICEBERG_REST_EXPORT Result<LoadTableResult> LoadTableResultFromJson(

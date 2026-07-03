@@ -22,8 +22,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +36,7 @@
 #include "iceberg/file_format.h"
 #include "iceberg/json_serde_internal.h"
 #include "iceberg/manifest/manifest_entry.h"
+#include "iceberg/metrics/json_serde_internal.h"
 #include "iceberg/partition_spec.h"
 #include "iceberg/schema.h"
 #include "iceberg/sort_order.h"
@@ -90,6 +93,9 @@ constexpr std::string_view kExpiresIn = "expires_in";
 constexpr std::string_view kIssuedTokenType = "issued_token_type";
 constexpr std::string_view kRefreshToken = "refresh_token";
 constexpr std::string_view kOAuthScope = "scope";
+constexpr std::string_view kReportType = "report-type";
+constexpr std::string_view kReportTypeScanReport = "scan-report";
+constexpr std::string_view kReportTypeCommitReport = "commit-report";
 constexpr std::string_view kPlanStatus = "status";
 constexpr std::string_view kPlanId = "plan-id";
 constexpr std::string_view kPlanTasks = "plan-tasks";
@@ -1027,6 +1033,35 @@ Result<OAuthTokenResponse> OAuthTokenResponseFromJson(const nlohmann::json& json
   return response;
 }
 
+Result<nlohmann::json> ToJson(const ReportMetricsRequest& request) {
+  return std::visit(
+      [](const auto& report) -> Result<nlohmann::json> {
+        using T = std::decay_t<decltype(report)>;
+        ICEBERG_ASSIGN_OR_RAISE(auto json, iceberg::ToJson(report));
+        if constexpr (std::is_same_v<T, ScanReport>) {
+          json[kReportType] = kReportTypeScanReport;
+        } else {
+          json[kReportType] = kReportTypeCommitReport;
+        }
+        return json;
+      },
+      request.report);
+}
+
+Result<ReportMetricsRequest> ReportMetricsRequestFromJson(const nlohmann::json& json) {
+  ReportMetricsRequest request;
+  ICEBERG_ASSIGN_OR_RAISE(auto report_type, GetJsonValue<std::string>(json, kReportType));
+  if (report_type == kReportTypeScanReport) {
+    ICEBERG_ASSIGN_OR_RAISE(request.report, ScanReportFromJson(json));
+  } else if (report_type == kReportTypeCommitReport) {
+    ICEBERG_ASSIGN_OR_RAISE(request.report, CommitReportFromJson(json));
+  } else {
+    return JsonParseError("Invalid metrics report type: {}", report_type);
+  }
+  ICEBERG_RETURN_UNEXPECTED(request.Validate());
+  return request;
+}
+
 Result<PlanTableScanRequest> PlanTableScanRequestFromJson(const nlohmann::json& json) {
   PlanTableScanRequest request;
   ICEBERG_ASSIGN_OR_RAISE(request.snapshot_id,
@@ -1210,6 +1245,7 @@ ICEBERG_DEFINE_FROM_JSON(CreateTableRequest)
 ICEBERG_DEFINE_FROM_JSON(CommitTableRequest)
 ICEBERG_DEFINE_FROM_JSON(CommitTableResponse)
 ICEBERG_DEFINE_FROM_JSON(OAuthTokenResponse)
+ICEBERG_DEFINE_FROM_JSON(ReportMetricsRequest)
 ICEBERG_DEFINE_FROM_JSON(PlanTableScanRequest)
 ICEBERG_DEFINE_FROM_JSON(FetchScanTasksRequest)
 

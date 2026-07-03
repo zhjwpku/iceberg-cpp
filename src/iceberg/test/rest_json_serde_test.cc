@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -1447,6 +1448,56 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<CommitTableResponseInvalidParam>& info) {
       return info.param.test_name;
     });
+
+TEST(ReportMetricsRequestJsonSerdeTest, SerializesScanReportWithJavaReportType) {
+  ScanReport report;
+  report.table_name = "catalog.db.tbl";
+  report.snapshot_id = 42;
+  report.filter = True::Instance();
+  report.schema_id = 7;
+  report.projected_field_ids = {1, 2};
+  report.projected_field_names = {"id", "data"};
+  report.scan_metrics.result_data_files = CounterResult{.value = 2};
+
+  ReportMetricsRequest request{.report = report};
+  auto json_result = ToJson(request);
+  ASSERT_THAT(json_result, IsOk());
+  const auto& json = json_result.value();
+  EXPECT_EQ(json.at("report-type"), "scan-report");
+  EXPECT_EQ(json.at("table-name"), "catalog.db.tbl");
+  EXPECT_EQ(json.at("metrics").at("result-data-files").at("value"), 2);
+
+  auto parsed = ReportMetricsRequestFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  ASSERT_TRUE(std::holds_alternative<ScanReport>(parsed.value().report));
+  const auto& parsed_report = std::get<ScanReport>(parsed.value().report);
+  EXPECT_EQ(parsed_report.table_name, report.table_name);
+  EXPECT_EQ(parsed_report.snapshot_id, report.snapshot_id);
+}
+
+TEST(ReportMetricsRequestJsonSerdeTest, SerializesCommitReportWithJavaReportType) {
+  CommitReport report;
+  report.table_name = "catalog.db.tbl";
+  report.snapshot_id = 43;
+  report.sequence_number = 9;
+  report.operation = "append";
+  report.commit_metrics.added_data_files = CounterResult{.value = 1};
+
+  ReportMetricsRequest request{.report = report};
+  auto json_result = ToJson(request);
+  ASSERT_THAT(json_result, IsOk());
+  const auto& json = json_result.value();
+  EXPECT_EQ(json.at("report-type"), "commit-report");
+  EXPECT_EQ(json.at("table-name"), "catalog.db.tbl");
+  EXPECT_EQ(json.at("metrics").at("added-data-files").at("value"), 1);
+
+  auto parsed = ReportMetricsRequestFromJson(json);
+  ASSERT_THAT(parsed, IsOk());
+  ASSERT_TRUE(std::holds_alternative<CommitReport>(parsed.value().report));
+  const auto& parsed_report = std::get<CommitReport>(parsed.value().report);
+  EXPECT_EQ(parsed_report.table_name, report.table_name);
+  EXPECT_EQ(parsed_report.sequence_number, report.sequence_number);
+}
 
 // Helper: empty schema and specs for scan response tests that don't need content-file
 // partition parsing.

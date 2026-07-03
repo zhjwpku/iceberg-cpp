@@ -38,9 +38,11 @@
 #include "iceberg/catalog/rest/json_serde_internal.h"
 #include "iceberg/catalog/rest/resource_paths.h"
 #include "iceberg/catalog/rest/rest_file_io.h"
+#include "iceberg/catalog/rest/rest_metrics_reporter.h"
 #include "iceberg/catalog/rest/rest_util.h"
 #include "iceberg/catalog/rest/types.h"
 #include "iceberg/json_serde_internal.h"
+#include "iceberg/metrics/metrics_reporters.h"
 #include "iceberg/partition_spec.h"
 #include "iceberg/result.h"
 #include "iceberg/schema.h"
@@ -425,12 +427,15 @@ Result<std::shared_ptr<RestCatalog>> RestCatalog::Make(
 
   // Create FileIO with the final configuration
   ICEBERG_ASSIGN_OR_RAISE(auto file_io, MakeCatalogFileIO(final_config));
+  ICEBERG_ASSIGN_OR_RAISE(auto metrics_reporter_unique,
+                          MetricsReporters::Load(final_config.configs()));
+  std::shared_ptr<MetricsReporter> metrics_reporter(std::move(metrics_reporter_unique));
 
   auto default_context = SessionContext::Empty();
   return std::shared_ptr<RestCatalog>(new RestCatalog(
       std::move(final_config), std::move(file_io), std::move(client), std::move(paths),
       std::move(endpoints), std::move(auth_manager), std::move(catalog_session),
-      snapshot_mode, std::move(default_context)));
+      snapshot_mode, std::move(default_context), std::move(metrics_reporter)));
 }
 
 RestCatalog::RestCatalog(RestCatalogProperties config, std::shared_ptr<FileIO> file_io,
@@ -439,7 +444,8 @@ RestCatalog::RestCatalog(RestCatalogProperties config, std::shared_ptr<FileIO> f
                          std::unordered_set<Endpoint> endpoints,
                          std::unique_ptr<auth::AuthManager> auth_manager,
                          std::shared_ptr<auth::AuthSession> catalog_session,
-                         SnapshotMode snapshot_mode, SessionContext default_context)
+                         SnapshotMode snapshot_mode, SessionContext default_context,
+                         std::shared_ptr<MetricsReporter> metrics_reporter)
     : config_(std::move(config)),
       file_io_(std::move(file_io)),
       client_(std::move(client)),
@@ -449,7 +455,8 @@ RestCatalog::RestCatalog(RestCatalogProperties config, std::shared_ptr<FileIO> f
       auth_manager_(std::move(auth_manager)),
       catalog_session_(std::move(catalog_session)),
       snapshot_mode_(snapshot_mode),
-      default_context_(std::move(default_context)) {
+      default_context_(std::move(default_context)),
+      metrics_reporter_(std::move(metrics_reporter)) {
   ICEBERG_DCHECK(catalog_session_ != nullptr, "catalog_session must not be null");
 }
 
@@ -494,6 +501,32 @@ Result<std::shared_ptr<FileIO>> RestCatalog::TableFileIO(
   }
 
   return file_io_;
+}
+
+Result<std::shared_ptr<MetricsReporter>> RestCatalog::TableMetricsReporter(
+    const TableIdentifier& identifier,
+    std::shared_ptr<auth::AuthSession> table_session) const {
+  if (!config_.Get(RestCatalogProperties::kMetricsReportingEnabled) ||
+      !supported_endpoints_.contains(Endpoint::ReportMetrics())) {
+    return metrics_reporter_;
+  }
+
+  auto rest_reporter =
+      std::make_shared<RestMetricsReporter>(*this, identifier, std::move(table_session));
+  return MetricsReporters::Combine(metrics_reporter_, std::move(rest_reporter));
+}
+
+Status RestCatalog::ReportMetrics(const TableIdentifier& identifier,
+                                  const MetricsReport& report,
+                                  auth::AuthSession& session) const {
+  ICEBERG_ENDPOINT_CHECK(supported_endpoints_, Endpoint::ReportMetrics());
+  ICEBERG_ASSIGN_OR_RAISE(auto path, paths_->Metrics(identifier));
+  ReportMetricsRequest request{.report = report};
+  ICEBERG_ASSIGN_OR_RAISE(auto request_json, ToJson(request));
+  ICEBERG_ASSIGN_OR_RAISE(auto request_body, ToJsonString(request_json));
+  ICEBERG_RETURN_UNEXPECTED(client_->Post(path, request_body, /*headers=*/{},
+                                          *TableErrorHandler::Instance(), session));
+  return {};
 }
 
 Result<std::vector<Namespace>> RestCatalog::ListNamespaces(
@@ -735,6 +768,8 @@ Result<std::shared_ptr<Transaction>> RestCatalog::StageCreateTable(
   ICEBERG_ASSIGN_OR_RAISE(
       auto table_session,
       TableAuthSession(identifier, table_config, std::move(contextual_session)));
+  ICEBERG_ASSIGN_OR_RAISE(auto metrics_reporter,
+                          TableMetricsReporter(identifier, table_session));
   auto table_catalog = std::make_shared<TableScopedCatalog>(
       shared_from_this(), context, identifier, table_config, std::move(table_session),
       table_io);
@@ -742,7 +777,7 @@ Result<std::shared_ptr<Transaction>> RestCatalog::StageCreateTable(
       auto staged_table,
       StagedTable::Make(identifier, std::move(result.metadata),
                         std::move(result.metadata_location), std::move(table_io),
-                        std::move(table_catalog)));
+                        std::move(table_catalog), std::move(metrics_reporter)));
   return Transaction::Make(std::move(staged_table), TransactionKind::kCreate);
 }
 
@@ -851,11 +886,13 @@ Result<std::shared_ptr<Table>> RestCatalog::MakeTableFromLoadResult(
   ICEBERG_ASSIGN_OR_RAISE(
       auto table_session,
       TableAuthSession(identifier, table_config, std::move(contextual_session)));
+  ICEBERG_ASSIGN_OR_RAISE(auto metrics_reporter,
+                          TableMetricsReporter(identifier, table_session));
   auto table_catalog = std::make_shared<TableScopedCatalog>(
       shared_from_this(), context, identifier, table_config, table_session, table_io);
   return Table::Make(identifier, std::move(result.metadata),
                      std::move(result.metadata_location), std::move(table_io),
-                     std::move(table_catalog));
+                     std::move(table_catalog), std::move(metrics_reporter));
 }
 
 Result<std::shared_ptr<Table>> RestCatalog::MakeTableFromCommitResponse(
@@ -864,11 +901,13 @@ Result<std::shared_ptr<Table>> RestCatalog::MakeTableFromCommitResponse(
     const std::unordered_map<std::string, std::string>& table_config,
     std::shared_ptr<auth::AuthSession> table_session, std::shared_ptr<FileIO> table_io) {
   // Reuse the bound FileIO because commit responses carry no config or credentials.
+  ICEBERG_ASSIGN_OR_RAISE(auto metrics_reporter,
+                          TableMetricsReporter(identifier, table_session));
   auto table_catalog = std::make_shared<TableScopedCatalog>(
       shared_from_this(), context, identifier, table_config, table_session, table_io);
   return Table::Make(identifier, std::move(response.metadata),
                      std::move(response.metadata_location), std::move(table_io),
-                     std::move(table_catalog));
+                     std::move(table_catalog), std::move(metrics_reporter));
 }
 
 }  // namespace iceberg::rest

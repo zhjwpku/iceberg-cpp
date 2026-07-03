@@ -23,6 +23,8 @@
 #include <optional>
 
 #include "iceberg/catalog.h"
+#include "iceberg/metrics/commit_report.h"
+#include "iceberg/metrics/metrics_context.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/statistics_file.h"
@@ -71,6 +73,7 @@ Result<std::shared_ptr<TransactionContext>> TransactionContext::Make(
   auto ctx = std::make_shared<TransactionContext>();
   ctx->kind = kind;
   ctx->table = std::move(table);
+  ctx->metrics_reporter = ctx->table->metrics_reporter();
   if (kind == TransactionKind::kCreate) {
     ctx->metadata_builder = TableMetadataBuilder::BuildFromEmpty();
     std::ignore = ctx->metadata_builder->ApplyChangesForCreate(*ctx->table->metadata());
@@ -370,14 +373,22 @@ Result<std::shared_ptr<Table>> Transaction::Commit() {
   int32_t max_wait_ms = props.Get(TableProperties::kCommitMaxRetryWaitMs);
   int32_t total_timeout_ms = props.Get(TableProperties::kCommitTotalRetryTimeMs);
 
+  auto metrics_context = MetricsContext::Default();
+  ctx_->commit_metrics = CommitMetrics::Make(*metrics_context);
+  auto total_duration = ctx_->commit_metrics->total_duration->Start();
+  int32_t commit_attempts = 0;
   bool is_first_attempt = true;
   auto commit_result =
       MakeCommitRetryRunner(num_retries, min_wait_ms, max_wait_ms, total_timeout_ms)
-          .Run([this, &is_first_attempt]() -> Result<std::shared_ptr<Table>> {
-            auto result = CommitOnce(is_first_attempt);
-            is_first_attempt = false;
-            return result;
-          });
+          .Run(
+              [this, &is_first_attempt]() -> Result<std::shared_ptr<Table>> {
+                auto result = CommitOnce(is_first_attempt);
+                is_first_attempt = false;
+                return result;
+              },
+              &commit_attempts);
+  total_duration.Stop();
+  ctx_->commit_metrics->attempts->Increment(commit_attempts);
 
   Result<const TableMetadata*> finalize_result =
       commit_result.has_value()

@@ -29,6 +29,7 @@
 
 #include "iceberg/catalog/rest/endpoint.h"
 #include "iceberg/catalog/rest/iceberg_rest_export.h"
+#include "iceberg/metrics/metrics_reporter.h"
 #include "iceberg/result.h"
 #include "iceberg/storage_credential.h"
 #include "iceberg/table_identifier.h"
@@ -309,6 +310,14 @@ struct ICEBERG_REST_EXPORT OAuthTokenResponse {
   Status Validate() const;
 
   bool operator==(const OAuthTokenResponse&) const = default;
+};
+
+/// \brief Request to report scan or commit metrics for a table.
+struct ICEBERG_REST_EXPORT ReportMetricsRequest {
+  MetricsReport report;  // required
+
+  /// \brief Validates the ReportMetricsRequest.
+  Status Validate() const { return {}; }
 };
 
 /// \brief Request to initiate a server-side scan planning operation.

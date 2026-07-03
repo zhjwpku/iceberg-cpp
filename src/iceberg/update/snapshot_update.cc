@@ -31,8 +31,11 @@
 #include "iceberg/manifest/manifest_reader.h"
 #include "iceberg/manifest/manifest_writer.h"
 #include "iceberg/manifest/rolling_manifest_writer.h"
+#include "iceberg/metrics/commit_report.h"
+#include "iceberg/metrics/metrics_reporter.h"
 #include "iceberg/partition_summary_internal.h"
 #include "iceberg/table.h"  // IWYU pragma: keep
+#include "iceberg/table_identifier.h"
 #include "iceberg/transaction.h"
 #include "iceberg/util/executor_util_internal.h"
 #include "iceberg/util/macros.h"
@@ -386,6 +389,7 @@ Status SnapshotUpdate::Finalize(Result<const TableMetadata*> commit_result) {
     }
   }
 
+  std::ignore = ReportCommitMetrics();
   return {};
 }
 
@@ -446,6 +450,24 @@ Status SnapshotUpdate::CleanAll() {
   manifest_lists_.clear();
   std::ignore = CleanUncommitted(std::unordered_set<std::string>{});
   return {};
+}
+
+Status SnapshotUpdate::ReportCommitMetrics() const {
+  if (staged_snapshot_ == nullptr || ctx_->table == nullptr ||
+      ctx_->metrics_reporter == nullptr || ctx_->commit_metrics == nullptr) {
+    return {};
+  }
+
+  auto operation = staged_snapshot_->Operation();
+  CommitReport report{
+      .table_name = ToString(ctx_->table->name()),
+      .snapshot_id = staged_snapshot_->snapshot_id,
+      .sequence_number = staged_snapshot_->sequence_number,
+      .operation = operation.has_value() ? std::string(operation.value()) : std::string{},
+      .commit_metrics =
+          CommitMetricsResult::From(*ctx_->commit_metrics, staged_snapshot_->summary),
+  };
+  return ctx_->metrics_reporter->Report(std::move(report));
 }
 
 Status SnapshotUpdate::DeleteFile(const std::string& path) {

@@ -33,6 +33,8 @@
 
 namespace iceberg {
 
+class CommitMetrics;
+
 /// \brief Whether a transaction creates a new table or updates an existing one.
 enum class TransactionKind : uint8_t { kCreate, kUpdate };
 
@@ -188,6 +190,8 @@ class ICEBERG_EXPORT TransactionContext {
 
   std::shared_ptr<Table> table;
   std::unique_ptr<TableMetadataBuilder> metadata_builder;
+  std::unique_ptr<CommitMetrics> commit_metrics;
+  std::shared_ptr<MetricsReporter> metrics_reporter;
   TransactionKind kind;
   // If PendingUpdate is created directly from Table, this is nullopt;
   // otherwise, it holds a weak pointer to the Transaction that created it.

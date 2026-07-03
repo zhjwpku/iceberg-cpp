@@ -164,6 +164,9 @@ class ManifestEvaluator;
 class ResidualEvaluator;
 class StrictMetricsEvaluator;
 
+/// \brief Metrics.
+class MetricsReporter;
+
 /// \brief Scan task.
 class ChangelogScanTask;
 class FileScanTask;

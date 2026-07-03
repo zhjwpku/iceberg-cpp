@@ -19,7 +19,9 @@
 
 #include "iceberg/table_scan.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 #include "iceberg/expression/binder.h"
@@ -27,6 +29,9 @@
 #include "iceberg/expression/residual_evaluator.h"
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/manifest/manifest_group.h"
+#include "iceberg/metrics/metrics_context.h"
+#include "iceberg/metrics/metrics_reporter.h"
+#include "iceberg/metrics/scan_report.h"
 #include "iceberg/result.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
@@ -57,6 +62,37 @@ const std::vector<std::string> kScanColumnsWithStats = [] {
   cols.insert(cols.end(), kStatsColumns.begin(), kStatsColumns.end());
   return cols;
 }();
+
+int64_t ContentFileSizeInBytes(const std::shared_ptr<DataFile>& file) {
+  if (!file) {
+    return 0;
+  }
+  if (file->IsDeletionVector() && file->content_size_in_bytes.has_value()) {
+    return file->content_size_in_bytes.value();
+  }
+  return file->file_size_in_bytes;
+}
+
+Result<std::vector<int32_t>> ProjectedFieldIds(const Schema& schema) {
+  ICEBERG_ASSIGN_OR_RAISE(auto ids, GetProjectedIdsVisitor::GetProjectedIds(
+                                        schema, /*include_struct_ids=*/false));
+  std::vector<int32_t> result(ids.begin(), ids.end());
+  std::ranges::sort(result);
+  return result;
+}
+
+Result<std::vector<std::string>> ProjectedFieldNames(
+    const Schema& schema, const std::vector<int32_t>& projected_field_ids) {
+  std::vector<std::string> names;
+  names.reserve(projected_field_ids.size());
+  for (int32_t field_id : projected_field_ids) {
+    ICEBERG_ASSIGN_OR_RAISE(auto name, schema.FindColumnNameById(field_id));
+    if (name.has_value()) {
+      names.emplace_back(name.value());
+    }
+  }
+  return names;
+}
 
 }  // namespace
 
@@ -208,6 +244,16 @@ Result<std::unique_ptr<TableScanBuilder<ScanType>>> TableScanBuilder<ScanType>::
   ICEBERG_PRECHECK(io != nullptr, "FileIO cannot be null");
   return std::unique_ptr<TableScanBuilder<ScanType>>(
       new TableScanBuilder<ScanType>(std::move(metadata), std::move(io)));
+}
+
+template <typename ScanType>
+Result<std::unique_ptr<TableScanBuilder<ScanType>>> TableScanBuilder<ScanType>::Make(
+    std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io,
+    std::string table_name, std::shared_ptr<MetricsReporter> metrics_reporter) {
+  ICEBERG_ASSIGN_OR_RAISE(auto builder, Make(std::move(metadata), std::move(io)));
+  builder->context_.table_name = std::move(table_name);
+  builder->context_.metrics_reporter = std::move(metrics_reporter);
+  return builder;
 }
 
 template <typename ScanType>
@@ -561,7 +607,59 @@ Result<std::vector<std::shared_ptr<FileScanTask>>> DataTableScan::PlanFiles() co
   if (context_.ignore_residuals) {
     manifest_group->IgnoreResiduals();
   }
-  return manifest_group->PlanFiles();
+  std::unique_ptr<ScanMetrics> scan_metrics;
+  std::optional<Timer::Timed> total_planning_duration;
+  if (context_.metrics_reporter) {
+    auto metrics_context = MetricsContext::Default();
+    scan_metrics = ScanMetrics::Make(*metrics_context);
+    scan_metrics->total_data_manifests->Increment(
+        static_cast<int64_t>(data_manifests.size()));
+    scan_metrics->total_delete_manifests->Increment(
+        static_cast<int64_t>(delete_manifests.size()));
+    total_planning_duration.emplace(scan_metrics->total_planning_duration->Start());
+  }
+
+  ICEBERG_ASSIGN_OR_RAISE(auto tasks, manifest_group->PlanFiles());
+
+  if (scan_metrics) {
+    total_planning_duration->Stop();
+    ICEBERG_ASSIGN_OR_RAISE(auto projected_schema, schema());
+    ICEBERG_ASSIGN_OR_RAISE(auto projected_field_ids,
+                            ProjectedFieldIds(*projected_schema));
+    ICEBERG_ASSIGN_OR_RAISE(auto projected_field_names,
+                            ProjectedFieldNames(*projected_schema, projected_field_ids));
+
+    int64_t delete_file_count = 0;
+    int64_t data_file_size = 0;
+    int64_t delete_file_size = 0;
+    for (const auto& task : tasks) {
+      if (!task) {
+        continue;
+      }
+      data_file_size += ContentFileSizeInBytes(task->data_file());
+      delete_file_count += static_cast<int64_t>(task->delete_files().size());
+      for (const auto& delete_file : task->delete_files()) {
+        delete_file_size += ContentFileSizeInBytes(delete_file);
+      }
+    }
+
+    scan_metrics->result_data_files->Increment(static_cast<int64_t>(tasks.size()));
+    scan_metrics->result_delete_files->Increment(delete_file_count);
+    scan_metrics->total_file_size_in_bytes->Increment(data_file_size);
+    scan_metrics->total_delete_file_size_in_bytes->Increment(delete_file_size);
+
+    ScanReport report{
+        .table_name = context_.table_name,
+        .snapshot_id = snapshot->snapshot_id,
+        .filter = filter(),
+        .schema_id = projected_schema->schema_id(),
+        .projected_field_ids = std::move(projected_field_ids),
+        .projected_field_names = std::move(projected_field_names),
+        .scan_metrics = ScanMetricsResult::From(*scan_metrics),
+    };
+    ICEBERG_RETURN_UNEXPECTED(context_.metrics_reporter->Report(std::move(report)));
+  }
+  return tasks;
 }
 
 // Friend function template for IncrementalScan that implements the shared PlanFiles

@@ -230,6 +230,8 @@ struct TableScanContext {
   std::string branch{};
   std::optional<int64_t> min_rows_requested;
   OptionalExecutor plan_executor;
+  std::string table_name;
+  std::shared_ptr<MetricsReporter> metrics_reporter;
 
   // Validate the context parameters to see if they have conflicts.
   [[nodiscard]] Status Validate() const;
@@ -251,6 +253,15 @@ class ICEBERG_TEMPLATE_CLASS_EXPORT TableScanBuilder : public ErrorCollector {
   /// \param io FileIO instance for reading manifests files.
   static Result<std::unique_ptr<TableScanBuilder<ScanType>>> Make(
       std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io);
+
+  /// \brief Constructs a TableScanBuilder with metrics reporting context.
+  /// \param metadata Current table metadata.
+  /// \param io FileIO instance for reading manifests files.
+  /// \param table_name Fully qualified table name used in scan reports.
+  /// \param metrics_reporter Reporter to notify after successful planning.
+  static Result<std::unique_ptr<TableScanBuilder<ScanType>>> Make(
+      std::shared_ptr<TableMetadata> metadata, std::shared_ptr<FileIO> io,
+      std::string table_name, std::shared_ptr<MetricsReporter> metrics_reporter);
 
   /// \brief Update property that will override the table's behavior
   /// based on the incoming pair. Unknown properties will be ignored.

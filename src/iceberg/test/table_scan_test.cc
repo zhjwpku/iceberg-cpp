@@ -22,18 +22,30 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "iceberg/expression/expressions.h"
+#include "iceberg/metrics/metrics_reporter.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/test/executor.h"
 #include "iceberg/test/scan_test_base.h"
 
 namespace iceberg {
+
+class CollectingMetricsReporter final : public MetricsReporter {
+ public:
+  Status Report(const MetricsReport& report) override {
+    reports.push_back(report);
+    return {};
+  }
+
+  std::vector<MetricsReport> reports;
+};
 
 class TableScanTest : public ScanTestBase {
  protected:
@@ -397,6 +409,52 @@ TEST_P(TableScanTest, PlanFilesWithDataManifests) {
   ASSERT_EQ(tasks.size(), 2);
   EXPECT_THAT(GetPaths(tasks), testing::UnorderedElementsAre("/path/to/data1.parquet",
                                                              "/path/to/data2.parquet"));
+}
+
+TEST_P(TableScanTest, PlanFilesReportsScanMetrics) {
+  auto version = GetParam();
+
+  constexpr int64_t kSnapshotId = 1000L;
+  const auto part_value = PartitionValues({Literal::Int(0)});
+
+  std::vector<ManifestEntry> data_entries{
+      MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/1,
+                MakeDataFile("/path/to/data1.parquet", part_value,
+                             partitioned_spec_->spec_id(), /*record_count=*/100)),
+      MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/1,
+                MakeDataFile("/path/to/data2.parquet", part_value,
+                             partitioned_spec_->spec_id(), /*record_count=*/200))};
+  auto data_manifest =
+      WriteDataManifest(version, kSnapshotId, std::move(data_entries), partitioned_spec_);
+  table_metadata_->snapshots[0]->manifest_list =
+      WriteManifestList(version, kSnapshotId, /*sequence_number=*/1, {data_manifest});
+
+  auto reporter = std::make_shared<CollectingMetricsReporter>();
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto builder,
+      DataTableScanBuilder::Make(table_metadata_, file_io_, "catalog.db.tbl", reporter));
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, builder->Build());
+  ICEBERG_UNWRAP_OR_FAIL(auto tasks, scan->PlanFiles());
+
+  ASSERT_EQ(tasks.size(), 2);
+  ASSERT_EQ(reporter->reports.size(), 1);
+  ASSERT_TRUE(std::holds_alternative<ScanReport>(reporter->reports[0]));
+  const auto& report = std::get<ScanReport>(reporter->reports[0]);
+  EXPECT_EQ(report.table_name, "catalog.db.tbl");
+  EXPECT_EQ(report.snapshot_id, kSnapshotId);
+  EXPECT_EQ(report.schema_id, schema_->schema_id());
+  EXPECT_THAT(report.projected_field_ids, testing::ElementsAre(1, 2));
+  EXPECT_THAT(report.projected_field_names, testing::ElementsAre("id", "data"));
+  ASSERT_TRUE(report.scan_metrics.result_data_files.has_value());
+  EXPECT_EQ(report.scan_metrics.result_data_files->value, 2);
+  ASSERT_TRUE(report.scan_metrics.total_data_manifests.has_value());
+  EXPECT_EQ(report.scan_metrics.total_data_manifests->value, 1);
+  ASSERT_TRUE(report.scan_metrics.total_delete_manifests.has_value());
+  EXPECT_EQ(report.scan_metrics.total_delete_manifests->value, 0);
+  ASSERT_TRUE(report.scan_metrics.total_planning_duration.has_value());
+  EXPECT_EQ(report.scan_metrics.total_planning_duration->count, 1);
+  ASSERT_TRUE(report.scan_metrics.total_file_size_in_bytes.has_value());
+  EXPECT_EQ(report.scan_metrics.total_file_size_in_bytes->value, 20);
 }
 
 TEST_P(TableScanTest, PlanFilesWithMultipleManifests) {

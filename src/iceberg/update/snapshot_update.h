@@ -264,6 +264,9 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
   /// \brief Clean up all uncommitted files
   Status CleanAll();
 
+  /// \brief Report commit metrics for the staged snapshot after a successful commit.
+  Status ReportCommitMetrics() const;
+
  protected:
   SnapshotSummaryBuilder summary_;
 
