@@ -351,7 +351,7 @@ cmake_build_type = cmake_build_types.get(get_option('buildtype'), 'Release')
 arrow_fallback_dep = disabler()
 arrow_aws_sdk_core_dep = disabler()
 avro_fallback_dep = disabler()
-arrow_system_lookup = cmake_deps['arrow']['lookup']
+arrow_system_dep = disabler()
 avro_system_lookup = cmake_deps['avro']['lookup']
 arrow_system_static = system_format_static
 avro_system_static = system_format_static
@@ -387,8 +387,21 @@ foreach name, spec : cmake_deps
                 kwargs: lookup,
             )
             if name == 'arrow'
-                arrow_system_lookup = lookup
                 arrow_system_static = variant == 'static'
+                if system_dep.found()
+                    # These features are part of Arrow's main CMake target;
+                    # their separate pkg-config files need not be installed.
+                    foreach feature : ['ARROW_FILESYSTEM', 'ARROW_JSON']
+                        if not cpp.has_header_symbol(
+                            'arrow/util/config.h',
+                            feature,
+                            dependencies: system_dep,
+                        )
+                            system_dep = disabler()
+                            break
+                        endif
+                    endforeach
+                endif
                 if system_dep.found()
                     system_parquet_dep = dependency(
                         'Parquet',
@@ -411,6 +424,16 @@ foreach name, spec : cmake_deps
                 break
             endif
         endforeach
+        if name == 'arrow'
+            arrow_system_dep = system_dep
+            if not system_dep.found() and get_option('wrap_mode') == 'nofallback' and get_option(
+                'bundle',
+            ).enabled()
+                error(
+                    'bundle=enabled requires Arrow with filesystem and JSON support and matching Parquet libraries',
+                )
+            endif
+        endif
         if name == 'sqlpp23' and (system_dep.found() or get_option('wrap_mode') == 'nofallback')
             meson.override_dependency('sqlpp23', system_dep, static: true)
         endif
@@ -688,13 +711,7 @@ if not get_option('bundle').disabled()
     if arrow_fallback_dep.found()
         arrow_dep = arrow_fallback_dep
     else
-        arrow_dep = dependency(
-            'Arrow',
-            static: arrow_system_static,
-            required: get_option('bundle'),
-            allow_fallback: false,
-            kwargs: arrow_system_lookup,
-        )
+        arrow_dep = arrow_system_dep
     endif
     if arrow_dep.type_name() == 'internal'
         parquet_dep = dependency('parquet', allow_fallback: false)
