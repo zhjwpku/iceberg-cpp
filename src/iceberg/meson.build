@@ -487,8 +487,16 @@ foreach name, spec : cmake_deps
         cmake_build_dir / 'iceberg-meson-source-dir.txt',
         check: true,
     ).stdout().strip()
+    system_deps = []
+    if name == 'arrow' and get_option('s3').enabled() and get_option(
+        'bundle_awssdk',
+    ) and host_machine.system() == 'linux'
+        # Meson's CMake conversion drops static OpenSSL flags such as Ubuntu's
+        # -l:libjitterentropy.a. Preserve them in links and .pc files.
+        system_deps += dependency('libcrypto', static: true)
+    endif
     dep = declare_dependency(
-        dependencies: upstream.dependency(spec['target']),
+        dependencies: [upstream.dependency(spec['target'])] + system_deps,
         version: spec['version'],
         compile_args: interface_args,
     )
@@ -518,14 +526,20 @@ foreach name, spec : cmake_deps
                 '\n',
             )
             foreach sdk_lib : sdk_libs
+                sdk_deps = [upstream.dependency(sdk_lib)]
+                if sdk_lib in ['s2n', 'aws-c-cal']
+                    sdk_deps += system_deps
+                endif
                 pkg.generate(
                     upstream.target(sdk_lib),
-                    libraries: upstream.dependency(sdk_lib),
+                    libraries: sdk_deps,
                     filebase: 'iceberg_' + sdk_lib,
                 )
             endforeach
             # SigV4 must reuse the SDK linked into Arrow when S3 bundles it.
-            arrow_aws_sdk_core_dep = upstream.dependency('aws-cpp-sdk-core')
+            arrow_aws_sdk_core_dep = declare_dependency(
+                dependencies: [upstream.dependency('aws-cpp-sdk-core')] + system_deps,
+            )
         endif
         meson.override_dependency(
             'parquet',
@@ -533,7 +547,7 @@ foreach name, spec : cmake_deps
         )
         pkg.generate(
             upstream.target('arrow_static'),
-            libraries: upstream.dependency('arrow_static'),
+            libraries: dep,
             filebase: 'arrow',
             version: spec['version'],
         )
