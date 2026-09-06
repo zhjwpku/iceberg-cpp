@@ -123,6 +123,7 @@ Arrow, Avro, CRoaring, and sqlpp23 source fallbacks use upstream CMake. Use
 
 Enable S3 with `-Ds3=enabled`. System Arrow must include S3 support; the Arrow
 source fallback bundles AWS SDK by default.
+On Linux, the bundled SDK uses system OpenSSL for s2n TLS support.
 Use `-Dbundle_awssdk=false` to use an installed AWS SDK in the Arrow source build.
 When S3 bundles AWS SDK, `-Dsigv4=enabled` reuses it for REST authentication;
 SigV4 without S3 requires an installed AWS SDK.

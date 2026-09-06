@@ -48,6 +48,22 @@ if(NOT DEFINED ENV{ARROW_THRIFT_URL})
   set(ENV{ARROW_THRIFT_URL}
       "https://archive.apache.org/dist/thrift/0.22.0/thrift-0.22.0.tar.gz")
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND ARROW_S3
+   AND AWSSDK_SOURCE STREQUAL "BUNDLED")
+  # Meson cannot translate s2n's libcrypto symbol rewriting commands. Use the
+  # same system OpenSSL as Arrow and aws-c-cal instead of embedding AWS-LC.
+  set(FETCHCONTENT_SOURCE_DIR_AWS-LC "${CMAKE_CURRENT_LIST_DIR}/openssl")
+  include(FetchContent)
+  macro(FetchContent_MakeAvailable)
+    if("${ARGV0}" STREQUAL "s2n-tls")
+      set(S2N_INTERN_LIBCRYPTO OFF)
+      set(ADDITIONAL_FLAGS "-DCOMPILE_DEFINITIONS=-I${OPENSSL_INCLUDE_DIR}")
+    endif()
+    _fetchcontent_makeavailable(${ARGV})
+  endmacro()
+endif()
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/cpp" upstream)
 
 # Meson needs compile flags to recognize PIC on archives of object libraries.
