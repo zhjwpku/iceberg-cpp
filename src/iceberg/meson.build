@@ -291,7 +291,7 @@ cmake_deps = {
             'ARROW_DEPENDENCY_SOURCE': 'BUNDLED',
             'ARROW_MIMALLOC': false,
             'ZLIB_SOURCE': 'SYSTEM',
-            'AWSSDK_SOURCE': 'SYSTEM',
+            'AWSSDK_SOURCE': get_option('bundle_awssdk') ? 'BUNDLED' : 'SYSTEM',
             'BUILD_WARNING_LEVEL': 'PRODUCTION',
             'CMAKE_CXX_STANDARD': '20',
         },
@@ -349,6 +349,7 @@ cmake_build_types = {
 }
 cmake_build_type = cmake_build_types.get(get_option('buildtype'), 'Release')
 arrow_fallback_dep = disabler()
+arrow_aws_sdk_core_dep = disabler()
 avro_fallback_dep = disabler()
 arrow_system_lookup = cmake_deps['arrow']['lookup']
 avro_system_lookup = cmake_deps['avro']['lookup']
@@ -483,8 +484,26 @@ foreach name, spec : cmake_deps
             check: true,
         )
         arrow_thrift_dep = upstream.dependency('thrift')
-        meson.override_dependency('arrow-filesystem', dep, static: true)
-        meson.override_dependency('arrow-json', dep, static: true)
+        if get_option('s3').enabled() and get_option('bundle_awssdk')
+            sdk_libs = run_command(
+                cmake_program,
+                '-E',
+                'cat',
+                cmake_build_dir / 'iceberg-meson-awssdk-libs.txt',
+                check: true,
+            ).stdout().strip().split(
+                '\n',
+            )
+            foreach sdk_lib : sdk_libs
+                pkg.generate(
+                    upstream.target(sdk_lib),
+                    libraries: upstream.dependency(sdk_lib),
+                    filebase: 'iceberg_' + sdk_lib,
+                )
+            endforeach
+            # SigV4 must reuse the SDK linked into Arrow when S3 bundles it.
+            arrow_aws_sdk_core_dep = upstream.dependency('aws-cpp-sdk-core')
+        endif
         meson.override_dependency(
             'parquet',
             upstream.dependency('parquet_static'),
@@ -677,18 +696,6 @@ if not get_option('bundle').disabled()
             kwargs: arrow_system_lookup,
         )
     endif
-    arrow_filesystem_dep = dependency(
-        'arrow-filesystem',
-        static: arrow_fallback_dep.found() or arrow_system_static,
-        required: get_option('bundle'),
-        allow_fallback: false,
-    )
-    arrow_json_dep = dependency(
-        'arrow-json',
-        static: arrow_fallback_dep.found() or arrow_system_static,
-        required: get_option('bundle'),
-        allow_fallback: false,
-    )
     if arrow_dep.type_name() == 'internal'
         parquet_dep = dependency('parquet', allow_fallback: false)
     else
@@ -717,8 +724,6 @@ if not get_option('bundle').disabled()
     endif
     bundle_enabled = (
         arrow_dep.found()
-        and arrow_filesystem_dep.found()
-        and arrow_json_dep.found()
         and parquet_dep.found()
         and avro_dep.found()
     )
@@ -762,13 +767,7 @@ if bundle_enabled
         'parquet/parquet_schema_util.cc',
         'parquet/parquet_writer.cc',
     )
-    iceberg_bundle_format_deps = [
-        arrow_dep,
-        arrow_filesystem_dep,
-        arrow_json_dep,
-        parquet_dep,
-        avro_dep,
-    ]
+    iceberg_bundle_format_deps = [arrow_dep, parquet_dep, avro_dep]
     avro_shared_dep = avro_dep
     if get_option('default_library') != 'static' and avro_dep.type_name() != 'internal'
         system_avro_shared_dep = dependency(
@@ -787,8 +786,6 @@ if bundle_enabled
     endif
     iceberg_bundle_shared_format_deps = [
         arrow_dep,
-        arrow_filesystem_dep,
-        arrow_json_dep,
         parquet_dep,
         avro_shared_dep,
     ]

@@ -71,6 +71,28 @@ set_property(TARGET arrow_static
 target_link_libraries(arrow_static INTERFACE thrift)
 target_link_libraries(parquet_static INTERFACE thrift)
 
+if(ARROW_S3 AND AWSSDK_SOURCE STREQUAL "BUNDLED")
+  # Preserve the SDK libraries when Meson flattens Arrow's filesystem objects.
+  get_directory_property(ARROW_MESON_AWSSDK_LIBS
+                         DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/cpp" DEFINITION
+                                   AWSSDK_LINK_LIBRARIES)
+  target_link_libraries(arrow_static INTERFACE ${ARROW_MESON_AWSSDK_LIBS})
+  if(APPLE)
+    # Meson's CMake conversion drops the SDK's "-framework ..." library strings.
+    # Link options preserve them for both build and installed consumers.
+    target_link_options(aws-c-common INTERFACE "-Wl,-framework,CoreFoundation")
+    target_link_options(aws-c-cal INTERFACE "-Wl,-framework,Security")
+    target_link_options(aws-c-io INTERFACE "-Wl,-framework,Security"
+                        "-Wl,-framework,Network")
+  endif()
+  # Export leaves first so Meson can generate pkg-config requirements without
+  # repeatedly expanding the SDK's transitive dependency graph.
+  list(REVERSE ARROW_MESON_AWSSDK_LIBS)
+  list(JOIN ARROW_MESON_AWSSDK_LIBS "\n" ARROW_MESON_AWSSDK_LIBS)
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/iceberg-meson-awssdk-libs.txt"
+       "${ARROW_MESON_AWSSDK_LIBS}\n")
+endif()
+
 if(WIN32)
   target_compile_definitions(thrift INTERFACE THRIFT_STATIC_DEFINE)
 endif()

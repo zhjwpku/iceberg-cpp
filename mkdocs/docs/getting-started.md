@@ -93,10 +93,16 @@ meson test -C builddir --timeout-multiplier 0
 Meson builds `iceberg_bundle` by default, including Arrow filesystem, Avro,
 and Parquet support. Use `-Dbundle=disabled` to omit it.
 
-System dependencies are preferred. Arrow, Avro, CRoaring, and sqlpp23 source
-fallbacks use upstream CMake; use `--force-fallback-for=arrow,avro` to force
-Arrow and Avro source builds. S3 requires `-Ds3=enabled` and either a system
-Arrow with S3 support or an installed AWS SDK for the Arrow source build.
+System dependencies are preferred. System Arrow and Parquet are resolved through
+their CMake packages; separate Arrow component pkg-config files are not required.
+Arrow, Avro, CRoaring, and sqlpp23 source fallbacks use upstream CMake. Use
+`--force-fallback-for=arrow,avro` to force Arrow and Avro source builds.
+
+Enable S3 with `-Ds3=enabled`. System Arrow must include S3 support; the Arrow
+source fallback bundles AWS SDK by default.
+Use `-Dbundle_awssdk=false` to use an installed AWS SDK in the Arrow source build.
+When S3 bundles AWS SDK, `-Dsigv4=enabled` reuses it for REST authentication;
+SigV4 without S3 requires an installed AWS SDK.
 
 Static libraries are the default. Installed libraries are available through
 pkg-config, for example `dependency('iceberg_bundle')`. With
@@ -125,6 +131,7 @@ Meson provides built-in equivalents for several CMake options:
 | `sql_postgresql` | `disabled` | Build the PostgreSQL connector |
 | `sql_mysql` | `disabled` | Build the MySQL connector |
 | `s3` | `disabled` | Build S3 FileIO support |
+| `bundle_awssdk` | `true` | Bundle AWS SDK in the Arrow source build for S3 support |
 | `rest_integration_test` | `disabled` | Build integration test for REST catalog |
 | `tests` | `enabled` | Build tests |
 

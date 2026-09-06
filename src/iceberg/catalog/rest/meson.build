@@ -48,12 +48,16 @@ iceberg_rest_compile_defs = []
 sigv4_opt = get_option('sigv4')
 # Use the CMake config, not pkg-config: aws-cpp-sdk-core.pc Cflags force
 # -std=c++11 -fno-exceptions, which would override the project's C++23 build.
-aws_sdk_core_dep = dependency(
-    'aws-cpp-sdk-core',
-    method: 'cmake',
-    modules: ['aws-cpp-sdk-core'],
-    required: sigv4_opt,
-)
+if not sigv4_opt.disabled() and arrow_aws_sdk_core_dep.found()
+    aws_sdk_core_dep = arrow_aws_sdk_core_dep
+else
+    aws_sdk_core_dep = dependency(
+        'aws-cpp-sdk-core',
+        method: 'cmake',
+        modules: ['aws-cpp-sdk-core'],
+        required: sigv4_opt,
+    )
+endif
 if aws_sdk_core_dep.found()
     iceberg_rest_build_deps += aws_sdk_core_dep
     iceberg_rest_compile_defs += '-DICEBERG_SIGV4_ENABLED=1'

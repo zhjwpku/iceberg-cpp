@@ -224,13 +224,13 @@ jobs:
             meson-setup-args: --vsenv --buildtype=release --cmake-prefix-path=C:/vcpkg/installed/x64-windows-static-md
           - title: AArch64 macOS 26
             runs-on: macos-26
-          - title: AMD64 Ubuntu 26.04, all catalogs and library variants
+          - title: AMD64 Ubuntu 26.04, all catalogs, S3 and library variants
             runs-on: ubuntu-26.04
             CC: gcc-14
             CXX: g++-14
             sql-clients: true
             benchmarks: true
-            meson-setup-args: --default-library=both --buildtype=release -Db_ndebug=true --force-fallback-for=arrow,avro -Dhive=enabled -Dsql_catalog=enabled -Dsql_sqlite=enabled -Dsql_postgresql=enabled -Dsql_mysql=enabled -Dbenchmarks=enabled
+            meson-setup-args: --default-library=both --buildtype=release -Db_ndebug=true --force-fallback-for=arrow,avro -Dhive=enabled -Dsql_catalog=enabled -Dsql_sqlite=enabled -Dsql_postgresql=enabled -Dsql_mysql=enabled -Dbenchmarks=enabled -Ds3=enabled -Dsigv4=enabled
           - title: AMD64 Ubuntu 26.04, bundle disabled
             runs-on: ubuntu-26.04
             CC: gcc-14

@@ -81,6 +81,12 @@ option(
     description: 'Build S3 FileIO support',
 )
 option(
+    'bundle_awssdk',
+    type: 'boolean',
+    value: true,
+    description: 'Bundle AWS SDK in the Arrow source build for S3 support',
+)
+option(
     'bundle_thrift',
     type: 'boolean',
     value: true,
