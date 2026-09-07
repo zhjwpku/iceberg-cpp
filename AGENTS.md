@@ -40,5 +40,4 @@ change.
 ## PR & Commit Conventions
 
 - Use Conventional Commits for commit messages.
-- Commit messages describe the what and why, not implementation details.
 - Run `pre-commit` for every PR and fix any reported issues.
