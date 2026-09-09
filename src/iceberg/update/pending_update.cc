@@ -19,6 +19,8 @@
 
 #include "iceberg/update/pending_update.h"
 
+#include "iceberg/exception.h"
+#include "iceberg/logging/log_macros.h"
 #include "iceberg/result.h"
 #include "iceberg/table.h"
 #include "iceberg/transaction.h"
@@ -27,19 +29,18 @@
 namespace iceberg {
 namespace {
 
-class ScopedTransactionBinding {
- public:
-  ScopedTransactionBinding(TransactionContext& ctx,
-                           const std::shared_ptr<Transaction>& txn)
-      : ctx_(ctx) {
-    ctx_.transaction = txn;
+template <typename Hook>
+void BestEffort(std::string_view name, Hook&& hook) noexcept {
+  try {
+    if (auto result = hook(); !result) {
+      ICEBERG_LOG_WARN("Update {} failed: {}", name, result.error().message);
+    }
+  } catch (const std::exception& e) {
+    ICEBERG_LOG_WARN("Update {} threw: {}", name, e.what());
+  } catch (...) {
+    ICEBERG_LOG_WARN("Update {} threw an unknown exception", name);
   }
-
-  ~ScopedTransactionBinding() { ctx_.transaction.reset(); }
-
- private:
-  TransactionContext& ctx_;
-};
+}
 
 }  // namespace
 
@@ -48,49 +49,65 @@ PendingUpdate::PendingUpdate(std::shared_ptr<TransactionContext> ctx)
 
 PendingUpdate::~PendingUpdate() = default;
 
-Status PendingUpdate::Commit() {
-  if (!ctx_->transaction) {
-    // Standalone update path: no transaction is attached to the context, so create a
-    // temporary one for this Commit() call.
-    ICEBERG_ASSIGN_OR_RAISE(auto txn, Transaction::Make(ctx_));
-    auto self = weak_from_this().lock();
-    ICEBERG_PRECHECK(self != nullptr, "PendingUpdate must be owned by std::shared_ptr");
-    ICEBERG_RETURN_UNEXPECTED(txn->AddUpdate(self));
-    // Keep Transaction::Make(ctx_) detached, but expose this live transaction while
-    // Commit() runs so an internal retry can reapply through update->Commit().
-    ScopedTransactionBinding binding(*ctx_, txn);
-
-    auto apply_status = txn->Apply(*this);
-    if (!apply_status.has_value()) {
-      txn->FinalizeUpdates(std::unexpected(apply_status.error()));
-      return apply_status;
-    }
-
-    auto commit_result = txn->Commit();
-    ICEBERG_RETURN_UNEXPECTED(commit_result);
-    return {};
+void PendingUpdate::EnsureMutable() const {
+  ICEBERG_CHECK_OR_DIE(phase_ == Phase::kMutable,
+                       "Update configuration is frozen or terminal");
+  ICEBERG_CHECK_OR_DIE(!ctx_->in_progress_,
+                       "Cannot mutate an update during an operation");
+  if (ctx_->transaction) {
+    auto txn = ctx_->transaction->lock();
+    ICEBERG_CHECK_OR_DIE(txn != nullptr, "Transaction has been destroyed");
+    ICEBERG_CHECK_OR_DIE(txn->state() == TransactionState::kReady ||
+                             txn->state() == TransactionState::kUpdatePending,
+                         "Transaction is terminal");
   }
-
-  auto txn = ctx_->transaction->lock();
-  if (!txn) {
-    return CommitFailed("Transaction has been destroyed");
-  }
-
-  auto apply_status = txn->Apply(*this);
-  if (!apply_status.has_value() && !txn->committing_) {
-    // Finalize eagerly so a failed update cleans up its staged files even if the
-    // caller never commits the transaction. When the transaction is mid-commit,
-    // leave finalization to Transaction::Commit(): the failure may be retryable
-    // (e.g. RetryableValidationFailed from a stale sequence number), and
-    // finalizing here would destroy staged state before the retry runs.
-    txn->FinalizeUpdates(std::unexpected(apply_status.error()));
-  }
-  return apply_status;
 }
 
-Status PendingUpdate::Finalize(
-    [[maybe_unused]] Result<const TableMetadata*> commit_result) {
+Status PendingUpdate::CheckCommitAllowed() const {
+  ICEBERG_CHECK(phase_ != Phase::kTerminal, "Update is terminal");
+  ICEBERG_CHECK(!ctx_->in_progress_, "Cannot reenter an update or transaction operation");
   return {};
+}
+
+Status PendingUpdate::Commit() {
+  ICEBERG_RETURN_UNEXPECTED(CheckCommitAllowed());
+  if (ctx_->transaction) {
+    auto txn = ctx_->transaction->lock();
+    ICEBERG_CHECK(txn != nullptr, "Transaction has been destroyed");
+    return txn->Apply(*this);
+  }
+
+  auto self = weak_from_this().lock();
+  ICEBERG_PRECHECK(self != nullptr, "PendingUpdate must be owned by std::shared_ptr");
+  ICEBERG_ASSIGN_OR_RAISE(auto txn, Transaction::Make(ctx_));
+  ICEBERG_RETURN_UNEXPECTED(txn->AddUpdate(self));
+  ICEBERG_RETURN_UNEXPECTED(txn->Apply(*this));
+  ICEBERG_RETURN_UNEXPECTED(txn->Commit());
+  return {};
+}
+
+Status PendingUpdate::Finalize([[maybe_unused]] const TableMetadata& committed) {
+  return {};
+}
+
+void PendingUpdate::Cleanup() noexcept {
+  if (!staged_) {
+    return;
+  }
+  // Consume the generation before any callback can throw or reenter.
+  staged_ = false;
+  BestEffort("staging cleanup", [this] { return CleanStaged(); });
+}
+
+void PendingUpdate::FinalizeOnce(const TableMetadata& committed) noexcept {
+  // A generation already consumed by Cleanup (a staged snapshot that produced no
+  // metadata change) has nothing to finalize or report.
+  if (!staged_) {
+    return;
+  }
+  staged_ = false;
+  BestEffort("finalization", [this, &committed] { return Finalize(committed); });
+  BestEffort("reporting", [this] { return ReportCommitted(); });
 }
 
 const TableMetadata& PendingUpdate::base() const { return ctx_->current(); }

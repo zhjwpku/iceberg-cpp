@@ -73,6 +73,8 @@ class ICEBERG_EXPORT FastAppend : public SnapshotUpdate {
   /// \return This FastAppend for method chaining.
   FastAppend& AppendManifest(const ManifestFile& manifest);
 
+ protected:
+  Status Freeze() override;
   std::string operation() override;
 
   Result<std::vector<ManifestFile>> Apply(
@@ -81,7 +83,6 @@ class ICEBERG_EXPORT FastAppend : public SnapshotUpdate {
   std::unordered_map<std::string, std::string> Summary() override;
   void SetSummaryProperty(const std::string& property, const std::string& value) override;
   Status CleanUncommitted(const std::unordered_set<std::string>& committed) override;
-  bool CleanupAfterCommit() const override;
 
  private:
   explicit FastAppend(std::string table_name, std::shared_ptr<TransactionContext> ctx);
