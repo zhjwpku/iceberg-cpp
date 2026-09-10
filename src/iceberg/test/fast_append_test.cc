@@ -1134,8 +1134,8 @@ TEST_F(FastAppendTest, StagedNoopIsCleanedAndCanBecomeEffectiveOnRebase) {
     update->write_partial = true;
     auto builder = TableMetadataBuilder::BuildFrom(table_->metadata().get());
     auto existing = std::make_shared<Snapshot>(Snapshot{
-        .sequence_number = table_->metadata()->NextSequenceNumber(),
         .snapshot_id = update->SnapshotId(),
+        .sequence_number = table_->metadata()->NextSequenceNumber(),
         .timestamp_ms = CurrentTimePointMs(),
         .manifest_list = table_location_ + "/metadata/existing-noop-list.avro",
         .summary = {{SnapshotSummaryFields::kOperation, DataOperation::kAppend}},

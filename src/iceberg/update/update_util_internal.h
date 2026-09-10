@@ -163,7 +163,9 @@ inline Result<std::shared_ptr<Expression>> CopyUpdateExpression(
     // Preserve the normal validation path for already-bound/invalid filters.
     return expression;
   }
-  const auto& predicate = checked_cast<const UnboundPredicate&>(*expression);
+  // Expression is a virtual base of UnboundPredicate, so this cast must stay
+  // dynamic in release builds too.
+  const auto& predicate = dynamic_cast<const UnboundPredicate&>(*expression);
   std::vector<Literal> values;
   for (const auto& value : predicate.literals()) {
     ICEBERG_ASSIGN_OR_RAISE(auto copy, CopyUpdateLiteral(value));
