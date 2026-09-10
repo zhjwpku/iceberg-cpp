@@ -19,6 +19,7 @@
 
 #include "iceberg/update/update_schema.h"
 
+#include <array>
 #include <format>
 #include <limits>
 #include <memory>
@@ -312,7 +313,7 @@ TEST_F(UpdateSchemaDefaultValueTest, FrozenNestedInputsAndPreviewsAreIsolated) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewUpdateSchema());
   update->AddColumn("nested", map_type, "nested doc")
       .AddRequiredColumn("copy_id", int64(), "identifier doc", Literal::Long(42));
-  std::string_view identifier_names[] = {"copy_id"};
+  std::array<std::string_view, 1> identifier_names = {"copy_id"};
   std::span<std::string_view> identifiers(identifier_names);
   update->SetIdentifierFields(identifiers);
   ICEBERG_UNWRAP_OR_FAIL(auto expected, update->Validate());
