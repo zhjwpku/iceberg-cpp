@@ -37,8 +37,10 @@
 #include "iceberg/snapshot.h"
 #include "iceberg/statistics_file.h"
 #include "iceberg/table_metadata.h"
+#include "iceberg/table_properties.h"
 #include "iceberg/test/executor.h"
 #include "iceberg/test/matchers.h"
+#include "iceberg/test/mock_catalog.h"
 #include "iceberg/test/update_test_base.h"
 #include "iceberg/transaction.h"
 #include "iceberg/update/fast_append.h"
@@ -316,9 +318,9 @@ TEST_F(ExpireSnapshotsTest, CleanupNoneSkipsDeletion) {
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Validate());
   EXPECT_EQ(result.snapshot_ids_to_remove.size(), 1);
 
-  // With kNone cleanup level, Finalize should skip all file deletion
-  auto finalize_status = update->Commit();
-  EXPECT_THAT(finalize_status, IsOk());
+  // With kNone cleanup level, Commit should skip all file deletion
+  auto commit_status = update->Commit();
+  EXPECT_THAT(commit_status, IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
@@ -334,7 +336,46 @@ TEST_F(ExpireSnapshotsTest, AbortSkipsExpirationDeletion) {
   EXPECT_TRUE(deleted_files.empty());
 }
 
-TEST_F(ExpireSnapshotsTest, FinalizeSkipsWhenNothingExpired) {
+TEST_F(ExpireSnapshotsCleanupTest, CommitFailureSkipsExpirationDeletion) {
+  const auto expired_list = table_location_ + "/metadata/expired-list.avro";
+  const auto current_list = table_location_ + "/metadata/current-list.avro";
+  WriteManifestList(expired_list, kExpiredSnapshotId, 0, kExpiredSequenceNumber, {});
+  WriteManifestList(current_list, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_list, current_list);
+
+  auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
+  EXPECT_CALL(*mock, UpdateTable(::testing::_, ::testing::_, ::testing::_))
+      .Times(1)
+      .WillOnce(::testing::Return(CommitFailed("injected commit failure")));
+  auto metadata = std::make_shared<TableMetadata>(*table_->metadata());
+  metadata->properties.Set(TableProperties::kCommitNumRetries, 0);
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto table,
+      Table::Make(table_->name(), metadata, std::string(table_->metadata_file_location()),
+                  file_io_, mock));
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewExpireSnapshots());
+  std::vector<std::string> deleted_files;
+  update->ExpireSnapshotId(kExpiredSnapshotId).DeleteWith([&](const std::string& path) {
+    deleted_files.push_back(path);
+  });
+  ASSERT_THAT(update->Commit(), IsOk());
+  EXPECT_FALSE(txn->current().SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_TRUE(deleted_files.empty());
+
+  EXPECT_THAT(txn->Commit(),
+              ::testing::AllOf(IsError(ErrorKind::kCommitFailed),
+                               HasErrorMessage("injected commit failure")));
+  EXPECT_EQ(txn->state(), TransactionState::kFailed);
+  EXPECT_THAT(txn->Abort(), IsOk());
+  EXPECT_TRUE(deleted_files.empty());
+  EXPECT_TRUE(ReloadMetadata()->SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_THAT(file_io_->ReadFile(expired_list, std::nullopt), IsOk());
+  EXPECT_THAT(file_io_->ReadFile(current_list, std::nullopt), IsOk());
+}
+
+TEST_F(ExpireSnapshotsTest, CommitSkipsWhenNothingExpired) {
   std::vector<std::string> deleted_files;
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
   update->RetainLast(2);
@@ -344,9 +385,9 @@ TEST_F(ExpireSnapshotsTest, FinalizeSkipsWhenNothingExpired) {
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Validate());
   EXPECT_TRUE(result.snapshot_ids_to_remove.empty());
 
-  // No snapshots expired, so Finalize should not delete any files
-  auto finalize_status = update->Commit();
-  EXPECT_THAT(finalize_status, IsOk());
+  // No snapshots expired, so Commit should not delete any files
+  auto commit_status = update->Commit();
+  EXPECT_THAT(commit_status, IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
@@ -354,7 +395,7 @@ TEST_F(ExpireSnapshotsTest, CommitWithCleanupNone) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
   update->CleanupLevel(CleanupLevel::kNone);
 
-  // Commit should succeed - Finalize is called internally but skips cleanup
+  // Commit should succeed and skip cleanup
   EXPECT_THAT(update->Commit(), IsOk());
 
   // Verify snapshot was removed from metadata

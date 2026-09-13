@@ -187,7 +187,8 @@ TEST_F(UpdateStatisticsTest, ReplaceStatistics) {
   // Should have the second one (replacement)
   EXPECT_THAT(FindStatistics(result.to_set, 1),
               ::testing::Pointee(::testing::Eq(*stats_file_2)));
-  EXPECT_NE(FindStatistics(result.to_set, 1), stats_file_1);
+  EXPECT_THAT(FindStatistics(result.to_set, 1),
+              ::testing::Pointee(::testing::Ne(*stats_file_1)));
 }
 
 TEST_F(UpdateStatisticsTest, SetThenRemoveSameSnapshot) {

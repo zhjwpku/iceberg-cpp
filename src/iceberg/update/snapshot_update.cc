@@ -38,6 +38,7 @@
 #include "iceberg/partition_summary_internal.h"
 #include "iceberg/table.h"  // IWYU pragma: keep
 #include "iceberg/transaction.h"
+#include "iceberg/util/best_effort_internal.h"
 #include "iceberg/util/executor_util_internal.h"
 #include "iceberg/util/macros.h"
 #include "iceberg/util/snapshot_util_internal.h"
@@ -391,15 +392,8 @@ Status SnapshotUpdate::Finalize([[maybe_unused]] const TableMetadata& metadata) 
       std::views::transform([](const auto& manifest) { return manifest.manifest_path; }) |
       std::ranges::to<std::unordered_set<std::string>>();
   // Let derived updates release their caches and clean operation-specific files.
-  try {
-    if (auto status = CleanUncommitted(committed); !status) {
-      ICEBERG_LOG_WARN("Snapshot cleanup failed: {}", status.error().message);
-    }
-  } catch (const std::exception& e) {
-    ICEBERG_LOG_WARN("Snapshot cleanup threw: {}", e.what());
-  } catch (...) {
-    ICEBERG_LOG_WARN("Snapshot cleanup threw an unknown exception");
-  }
+  internal::BestEffort("Snapshot cleanup",
+                       [this, &committed] { return CleanUncommitted(committed); });
   committed.insert(staged_snapshot_->manifest_list);
   std::vector<std::string> unused;
   {
@@ -472,15 +466,8 @@ Result<std::unordered_map<std::string, std::string>> SnapshotUpdate::ComputeSumm
 }
 
 Status SnapshotUpdate::CleanStaged() {
-  try {
-    if (auto status = CleanUncommitted({}); !status) {
-      ICEBERG_LOG_WARN("Snapshot staging cleanup failed: {}", status.error().message);
-    }
-  } catch (const std::exception& e) {
-    ICEBERG_LOG_WARN("Snapshot staging cleanup threw: {}", e.what());
-  } catch (...) {
-    ICEBERG_LOG_WARN("Snapshot staging cleanup threw an unknown exception");
-  }
+  internal::BestEffort("Snapshot staging cleanup",
+                       [this] { return CleanUncommitted({}); });
   // Include paths whose writes failed before a derived cache recorded a manifest.
   std::unordered_set<std::string> paths;
   {

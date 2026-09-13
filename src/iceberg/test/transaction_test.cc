@@ -19,7 +19,6 @@
 
 #include "iceberg/transaction.h"
 
-#include <format>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -44,15 +43,6 @@
 
 namespace iceberg {
 
-class TestPendingUpdate final : public PendingUpdate {
- public:
-  explicit TestPendingUpdate(std::shared_ptr<TransactionContext> ctx)
-      : PendingUpdate(std::move(ctx)) {}
-
-  Kind kind() const override { return Kind::kUpdateProperties; }
-  bool IsRetryable() const override { return true; }
-};
-
 class TransactionTest : public UpdateTestBase {};
 
 TEST_F(TransactionTest, CreateTransaction) {
@@ -66,56 +56,12 @@ TEST_F(TransactionTest, CommitEmptyTransaction) {
   EXPECT_THAT(txn->Commit(), IsOk());
 }
 
-TEST_F(TransactionTest, TemporaryTransactionDoesNotAttachToContext) {
-  ICEBERG_UNWRAP_OR_FAIL(auto ctx,
-                         TransactionContext::Make(table_, TransactionKind::kUpdate));
-  ASSERT_FALSE(ctx->transaction.has_value());
-
-  ICEBERG_UNWRAP_OR_FAIL(auto txn, Transaction::Make(ctx));
-
-  EXPECT_NE(txn, nullptr);
-  EXPECT_FALSE(ctx->transaction.has_value());
-}
-
-TEST_F(TransactionTest, StandaloneCommitRequiresSharedOwnership) {
-  ICEBERG_UNWRAP_OR_FAIL(auto ctx,
-                         TransactionContext::Make(table_, TransactionKind::kUpdate));
-  auto update = std::make_unique<TestPendingUpdate>(ctx);
-
-  EXPECT_THAT(update->Commit(),
-              ::testing::AllOf(
-                  IsError(ErrorKind::kInvalidArgument),
-                  HasErrorMessage("PendingUpdate must be owned by std::shared_ptr")));
-  EXPECT_FALSE(ctx->transaction.has_value());
-}
-
-TEST_F(TransactionTest, StandaloneCommitClearsTemporaryTransactionBinding) {
-  ICEBERG_UNWRAP_OR_FAIL(auto ctx,
-                         TransactionContext::Make(table_, TransactionKind::kUpdate));
-  ICEBERG_UNWRAP_OR_FAIL(auto update, UpdateProperties::Make(ctx));
-  update->Set("standalone.property", "standalone.value");
-
-  EXPECT_THAT(update->Commit(), IsOk());
-  EXPECT_FALSE(ctx->transaction.has_value());
-}
-
 TEST_F(TransactionTest, CommitNoOpUpdate) {
   ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
   ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewSetSnapshot());
 
   EXPECT_THAT(update->Commit(), IsOk());
   EXPECT_THAT(txn->Commit(), IsOk());
-}
-
-TEST_F(TransactionTest, ApplyFailureFinalizesTransaction) {
-  ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
-  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewFastAppend());
-  update->AppendFile(nullptr);
-
-  EXPECT_THAT(update->Commit(), IsError(ErrorKind::kValidationFailed));
-  EXPECT_THAT(txn->Commit(),
-              ::testing::AllOf(IsError(ErrorKind::kValidationFailed),
-                               HasErrorMessage("Transaction is not ready")));
 }
 
 TEST_F(TransactionTest, CommitTransactionWithPropertyUpdate) {
@@ -223,37 +169,12 @@ TEST_F(TransactionRetryTest, CommitRetrySucceedsAfterConflict) {
   EXPECT_EQ(update_call_count, 2);
 }
 
-TEST_F(TransactionRetryTest, StandaloneCommitRetryReappliesUpdate) {
-  std::vector<size_t> update_counts;
-  ON_CALL(*mock_catalog_, UpdateTable(::testing::_, ::testing::_, ::testing::_))
-      .WillByDefault(
-          [this, &update_counts](const TableIdentifier&,
-                                 const std::vector<std::unique_ptr<TableRequirement>>&,
-                                 const std::vector<std::unique_ptr<TableUpdate>>& updates)
-              -> Result<std::shared_ptr<Table>> {
-            update_counts.push_back(updates.size());
-            if (update_counts.size() == 1) {
-              return CommitFailed("conflict on first attempt");
-            }
-            return Table::Make(mock_table_->name(), mock_table_->metadata(),
-                               std::string(mock_table_->metadata_file_location()),
-                               mock_table_->io(), mock_catalog_);
-          });
-  EXPECT_CALL(*mock_catalog_, LoadTable(::testing::_))
-      .WillOnce([this](const TableIdentifier&) -> Result<std::shared_ptr<Table>> {
-        auto builder = TableMetadataBuilder::BuildFrom(mock_table_->metadata().get());
-        ICEBERG_ASSIGN_OR_RAISE(auto metadata, builder->Build());
-        return Table::Make(
-            mock_table_->name(), std::shared_ptr<TableMetadata>(std::move(metadata)),
-            std::format("{}.refreshed", mock_table_->metadata_file_location()),
-            mock_table_->io(), mock_catalog_);
-      });
-
-  ICEBERG_UNWRAP_OR_FAIL(auto update, mock_table_->NewUpdateProperties());
+TEST_F(TransactionTest, StandaloneCommitRetryReappliesUpdate) {
+  FailCommits(1);
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
   update->Set("retry.test", "value");
-
-  EXPECT_THAT(update->Commit(), IsOk());
-  EXPECT_THAT(update_counts, ::testing::ElementsAre(1U, 1U));
+  ASSERT_THAT(update->Commit(), IsOk());
+  EXPECT_EQ(ReloadMetadata()->properties.configs().at("retry.test"), "value");
 }
 
 TEST_F(TransactionRetryTest, CommitRetryExhausted) {
@@ -393,9 +314,13 @@ TEST_F(TransactionTest, AppliedUpdateCannotCompleteAnotherPendingOperation) {
 }
 
 TEST_F(TransactionTest, StandaloneCommitIsTerminal) {
-  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewUpdateProperties());
+  ICEBERG_UNWRAP_OR_FAIL(auto ctx,
+                         TransactionContext::Make(table_, TransactionKind::kUpdate));
+  ICEBERG_UNWRAP_OR_FAIL(auto update, UpdateProperties::Make(ctx));
   update->Set("once", "value");
   ASSERT_THAT(update->Commit(), IsOk());
+  EXPECT_FALSE(ctx->transaction.has_value());
+  EXPECT_EQ(ReloadMetadata()->properties.configs().at("once"), "value");
   EXPECT_THAT(update->Commit(), HasErrorMessage("Update is terminal"));
   EXPECT_THROW(update->Set("twice", "value"), IcebergError);
 }
@@ -428,7 +353,9 @@ TEST_F(TransactionTest, ApplyFailureCannotBeCorrected) {
   EXPECT_EQ(txn->state(), TransactionState::kFailed);
   EXPECT_THROW(update->Set("format-version", "2"), IcebergError);
   EXPECT_THAT(update->Commit(), IsError(ErrorKind::kValidationFailed));
-  EXPECT_THAT(txn->Commit(), IsError(ErrorKind::kValidationFailed));
+  EXPECT_THAT(txn->Commit(),
+              ::testing::AllOf(IsError(ErrorKind::kValidationFailed),
+                               HasErrorMessage("Transaction is not ready")));
   EXPECT_THAT(txn->NewUpdateProperties(), IsError(ErrorKind::kValidationFailed));
   EXPECT_THAT(txn->Abort(), IsOk());
   EXPECT_THAT(txn->Abort(), IsOk());
@@ -475,20 +402,6 @@ TEST_F(TransactionTest, FreezeCopiesSortTransformAliases) {
   ASSERT_THAT(txn->Commit(), IsOk());
   ICEBERG_UNWRAP_OR_FAIL(auto order, ReloadMetadata()->SortOrder());
   EXPECT_EQ(*order->fields()[0].transform(), *Transform::Bucket(16));
-}
-
-TEST_F(TransactionTest, FreezeCopiesNestedSchemaTypes) {
-  ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
-  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewUpdateSchema());
-  auto type = decimal(9, 2);
-  update->AddColumn("amount", type);
-  ASSERT_THAT(update->Commit(), IsOk());
-  *type = DecimalType(18, 4);
-  ASSERT_THAT(txn->Commit(), IsOk());
-  ICEBERG_UNWRAP_OR_FAIL(auto schema, ReloadMetadata()->Schema());
-  ICEBERG_UNWRAP_OR_FAIL(auto field, schema->FindFieldByName("amount"));
-  ASSERT_TRUE(field.has_value());
-  EXPECT_EQ(*field->get().type(), *decimal(9, 2));
 }
 
 }  // namespace iceberg

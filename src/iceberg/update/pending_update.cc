@@ -20,29 +20,13 @@
 #include "iceberg/update/pending_update.h"
 
 #include "iceberg/exception.h"
-#include "iceberg/logging/log_macros.h"
 #include "iceberg/result.h"
 #include "iceberg/table.h"
 #include "iceberg/transaction.h"
+#include "iceberg/util/best_effort_internal.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
-namespace {
-
-template <typename Hook>
-void BestEffort(std::string_view name, Hook&& hook) noexcept {
-  try {
-    if (auto result = hook(); !result) {
-      ICEBERG_LOG_WARN("Update {} failed: {}", name, result.error().message);
-    }
-  } catch (const std::exception& e) {
-    ICEBERG_LOG_WARN("Update {} threw: {}", name, e.what());
-  } catch (...) {
-    ICEBERG_LOG_WARN("Update {} threw an unknown exception", name);
-  }
-}
-
-}  // namespace
 
 PendingUpdate::PendingUpdate(std::shared_ptr<TransactionContext> ctx)
     : ctx_(std::move(ctx)) {}
@@ -96,7 +80,7 @@ void PendingUpdate::Cleanup() noexcept {
   }
   // Consume the generation before any callback can throw or reenter.
   staged_ = false;
-  BestEffort("staging cleanup", [this] { return CleanStaged(); });
+  internal::BestEffort("Update staging cleanup", [this] { return CleanStaged(); });
 }
 
 void PendingUpdate::FinalizeOnce(const TableMetadata& committed) noexcept {
@@ -106,8 +90,9 @@ void PendingUpdate::FinalizeOnce(const TableMetadata& committed) noexcept {
     return;
   }
   staged_ = false;
-  BestEffort("finalization", [this, &committed] { return Finalize(committed); });
-  BestEffort("reporting", [this] { return ReportCommitted(); });
+  internal::BestEffort("Update finalization",
+                       [this, &committed] { return Finalize(committed); });
+  internal::BestEffort("Update reporting", [this] { return ReportCommitted(); });
 }
 
 const TableMetadata& PendingUpdate::base() const { return ctx_->current(); }

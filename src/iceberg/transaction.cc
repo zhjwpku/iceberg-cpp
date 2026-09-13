@@ -559,14 +559,9 @@ Result<std::shared_ptr<Table>> Transaction::CommitOnce(bool is_first_attempt,
           TableMetadataBuilder::BuildFrom(ctx_->table->metadata().get());
       ctx_->base_metadata_ = ctx_->table->metadata();
       for (const auto& update : pending_updates_) {
-        Status applied;
-        try {
-          applied = ReplayApply(*update);
-        } catch (const std::exception& e) {
-          applied = ValidationFailed("Replay Apply threw: {}", e.what());
-        } catch (...) {
-          applied = ValidationFailed("Replay Apply threw an unknown exception");
-        }
+        // Thrown exceptions reach Commit's preparation handler. Returned errors
+        // need a marker so retryable Apply errors do not trigger catalog retries.
+        auto applied = ReplayApply(*update);
         if (!applied) {
           replay_error = applied.error();
           return std::unexpected(applied.error());

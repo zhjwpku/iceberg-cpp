@@ -75,16 +75,21 @@ class TestSnapshotUpdate : public SnapshotUpdate {
   using SnapshotUpdate::SnapshotId;
 
   std::function<Status(int)> apply_callback;
+  std::function<Status()> cleanup_callback;
   std::function<Status()> finalize_callback;
   std::function<Status()> report_callback;
   int applies = 0;
+  int cleanups = 0;
   int finalizes = 0;
   int reports = 0;
   bool write_partial = false;
   std::vector<std::string> partial_paths;
 
  protected:
-  Status CleanUncommitted(const std::unordered_set<std::string>&) override { return {}; }
+  Status CleanUncommitted(const std::unordered_set<std::string>&) override {
+    ++cleanups;
+    return cleanup_callback ? cleanup_callback() : Status{};
+  }
   std::string operation() override { return "append"; }
   Result<std::vector<ManifestFile>> Apply(const TableMetadata&,
                                           const std::shared_ptr<Snapshot>&) override {
@@ -199,6 +204,18 @@ class FastAppendTest : public UpdateTestBase {
 };
 
 class SnapshotUpdateTest : public UpdateTestBase {};
+
+TEST_F(SnapshotUpdateTest, StandaloneCommitRequiresSharedOwnership) {
+  ICEBERG_UNWRAP_OR_FAIL(auto ctx,
+                         TransactionContext::Make(table_, TransactionKind::kUpdate));
+  auto update = std::make_unique<TestSnapshotUpdate>(ctx);
+
+  EXPECT_THAT(update->Commit(),
+              ::testing::AllOf(
+                  IsError(ErrorKind::kInvalidArgument),
+                  HasErrorMessage("PendingUpdate must be owned by std::shared_ptr")));
+  EXPECT_FALSE(ctx->transaction.has_value());
+}
 
 TEST_F(FastAppendTest, AppendDataFile) {
   std::shared_ptr<FastAppend> fast_append;
@@ -358,6 +375,42 @@ TEST_F(FastAppendTest, AbortIgnoresCleanupDeleteFailure) {
   EXPECT_EQ(deletes, 2);
 }
 
+TEST_F(FastAppendTest, CommitFailureIgnoresCleanupDeleteFailure) {
+  auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
+  EXPECT_CALL(*mock, UpdateTable(::testing::_, ::testing::_, ::testing::_))
+      .Times(1)
+      .WillOnce(::testing::Return(CommitFailed("injected commit failure")));
+  auto metadata = std::make_shared<TableMetadata>(*table_->metadata());
+  metadata->properties.Set(TableProperties::kCommitNumRetries, 0);
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto table,
+      Table::Make(table_->name(), metadata, std::string(table_->metadata_file_location()),
+                  file_io_, mock));
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto append, txn->NewFastAppend());
+  std::vector<std::string> deleted_paths;
+  append->AppendFile(file_a_).DeleteWith([&](const std::string& path) {
+    deleted_paths.push_back(path);
+    return IOError("delete failed");
+  });
+  ASSERT_THAT(append->Commit(), IsOk());
+  ICEBERG_UNWRAP_OR_FAIL(auto snapshot, txn->current().Snapshot());
+  SnapshotCache cache(snapshot.get());
+  ICEBERG_UNWRAP_OR_FAIL(auto manifests, cache.Manifests(file_io_));
+  ASSERT_THAT(manifests, ::testing::SizeIs(1));
+  EXPECT_TRUE(deleted_paths.empty());
+
+  EXPECT_THAT(txn->Commit(),
+              ::testing::AllOf(IsError(ErrorKind::kCommitFailed),
+                               HasErrorMessage("injected commit failure")));
+  EXPECT_EQ(txn->state(), TransactionState::kFailed);
+  EXPECT_THAT(deleted_paths, ::testing::UnorderedElementsAre(manifests[0].manifest_path,
+                                                             snapshot->manifest_list));
+  EXPECT_THAT(txn->Abort(), IsOk());
+  EXPECT_THAT(deleted_paths, ::testing::SizeIs(2));
+  EXPECT_FALSE(ReloadMetadata()->Snapshot().has_value());
+}
+
 TEST_F(FastAppendTest, TransactionApplyFailureCleansUpStagedFiles) {
   ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
   ICEBERG_UNWRAP_OR_FAIL(auto fast_append, txn->NewFastAppend());
@@ -387,8 +440,27 @@ TEST_F(FastAppendTest, RetryCopiesAppendManifestAgain) {
       IsOk());
   const auto path = table_location_ + "/metadata/input.avro";
   ICEBERG_UNWRAP_OR_FAIL(auto manifest, WriteManifest(path, {file_a_}));
-  FailCommits(2);
-  ICEBERG_UNWRAP_OR_FAIL(auto fast_append, table_->NewFastAppend());
+  std::shared_ptr<Transaction> txn;
+  std::vector<std::string> attempt_manifests;
+  std::vector<std::string> attempt_lists;
+  FailCommits(2, [&](int attempt) {
+    SCOPED_TRACE(attempt);
+    ICEBERG_UNWRAP_OR_FAIL(auto snapshot, txn->current().Snapshot());
+    SnapshotCache cache(snapshot.get());
+    ICEBERG_UNWRAP_OR_FAIL(auto manifests, cache.DataManifests(file_io_));
+    ASSERT_THAT(manifests, ::testing::SizeIs(1));
+    const auto& manifest_path = manifests[0].manifest_path;
+    EXPECT_NE(manifest_path, path);
+    EXPECT_THAT(attempt_manifests, ::testing::Not(::testing::Contains(manifest_path)));
+    attempt_manifests.push_back(manifest_path);
+    attempt_lists.push_back(snapshot->manifest_list);
+    ICEBERG_UNWRAP_OR_FAIL(auto entries, ReadEntries(manifests[0]));
+    ASSERT_THAT(entries, ::testing::SizeIs(1));
+    ASSERT_NE(entries[0].data_file, nullptr);
+    EXPECT_EQ(entries[0].data_file->file_path, file_a_->file_path);
+  });
+  ICEBERG_UNWRAP_OR_FAIL(txn, table_->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto fast_append, txn->NewFastAppend());
   std::vector<std::string> deleted_paths;
   fast_append->DeleteWith([&](const std::string& deleted_path) {
     deleted_paths.push_back(deleted_path);
@@ -401,15 +473,22 @@ TEST_F(FastAppendTest, RetryCopiesAppendManifestAgain) {
     return file_io_->DeleteFile(deleted_path);
   });
   fast_append->AppendManifest(manifest);
-  EXPECT_THAT(fast_append->Commit(), IsOk());
-  EXPECT_THAT(table_->Refresh(), IsOk());
+  ASSERT_THAT(fast_append->Commit(), IsOk());
+  ASSERT_THAT(txn->Commit(), IsOk());
+  ASSERT_THAT(table_->Refresh(), IsOk());
   ICEBERG_UNWRAP_OR_FAIL(auto manifests, CurrentDataManifests());
   ASSERT_EQ(manifests.size(), 1U);
-  EXPECT_NE(manifests[0].manifest_path, path);
-  EXPECT_THAT(deleted_paths, ::testing::SizeIs(4U));
+  ASSERT_THAT(attempt_manifests, ::testing::SizeIs(3));
+  ASSERT_THAT(attempt_lists, ::testing::SizeIs(3));
+  EXPECT_EQ(manifests[0].manifest_path, attempt_manifests[2]);
+  EXPECT_THAT(deleted_paths,
+              ::testing::UnorderedElementsAre(attempt_manifests[0], attempt_lists[0],
+                                              attempt_manifests[1], attempt_lists[1]));
   EXPECT_THAT(deleted_paths, ::testing::Not(::testing::Contains(path)));
   EXPECT_THAT(deleted_paths,
               ::testing::Not(::testing::Contains(manifests[0].manifest_path)));
+  EXPECT_THAT(file_io_->ReadFile(path, std::nullopt), IsOk());
+  EXPECT_THAT(file_io_->ReadFile(attempt_lists[2], std::nullopt), IsOk());
 }
 
 TEST_F(FastAppendTest, AppendDuplicateFile) {
@@ -802,9 +881,26 @@ TEST_F(FastAppendMetricsTest, CommitStateUnknownDoesNotReport) {
 }
 
 TEST_F(FastAppendTest, ReplayApplyFailureStopsRetryAndCleansPartialFiles) {
-  for (auto replay_kind :
-       {ErrorKind::kRetryableValidationFailed, ErrorKind::kCommitStateUnknown}) {
-    SCOPED_TRACE(static_cast<int>(replay_kind));
+  struct ReplayFailure {
+    const char* name;
+    std::function<Status()> callback;
+    ErrorKind kind;
+    const char* message;
+  };
+  const std::vector<ReplayFailure> failures{
+      {"retryable status",
+       []() -> Status { return RetryableValidationFailed("replay validation failed"); },
+       ErrorKind::kRetryableValidationFailed, "replay validation failed"},
+      {"unknown status",
+       []() -> Status { return CommitStateUnknown("replay validation failed"); },
+       ErrorKind::kCommitStateUnknown, "replay validation failed"},
+      {"standard exception",
+       []() -> Status { throw std::runtime_error("replay callback threw"); },
+       ErrorKind::kValidationFailed, "replay callback threw"},
+      {"unknown exception", []() -> Status { throw 42; }, ErrorKind::kValidationFailed,
+       "Transaction preparation threw an unknown exception"}};
+  for (const auto& failure : failures) {
+    SCOPED_TRACE(failure.name);
     auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
     EXPECT_CALL(*mock, UpdateTable(::testing::_, ::testing::_, ::testing::_))
         .Times(1)
@@ -820,10 +916,9 @@ TEST_F(FastAppendTest, ReplayApplyFailureStopsRetryAndCleansPartialFiles) {
                            TransactionContext::Make(table, TransactionKind::kUpdate));
     auto update = std::make_shared<TestSnapshotUpdate>(ctx);
     update->write_partial = true;
-    update->apply_callback = [replay_kind](int attempt) -> Status {
+    update->apply_callback = [&failure](int attempt) -> Status {
       if (attempt == 2) {
-        return std::unexpected(
-            Error{.kind = replay_kind, .message = "replay validation failed"});
+        return failure.callback();
       }
       return {};
     };
@@ -834,9 +929,8 @@ TEST_F(FastAppendTest, ReplayApplyFailureStopsRetryAndCleansPartialFiles) {
       EXPECT_THROW(update->Set("reenter", "value"), IcebergError);
       return file_io_->DeleteFile(path);
     });
-    EXPECT_THAT(update->Commit(),
-                ::testing::AllOf(IsError(replay_kind),
-                                 HasErrorMessage("replay validation failed")));
+    EXPECT_THAT(update->Commit(), ::testing::AllOf(IsError(failure.kind),
+                                                   HasErrorMessage(failure.message)));
     EXPECT_EQ(update->applies, 2);
     EXPECT_EQ(update->finalizes, 0);
     EXPECT_EQ(update->reports, 0);
@@ -848,6 +942,61 @@ TEST_F(FastAppendTest, ReplayApplyFailureStopsRetryAndCleansPartialFiles) {
     EXPECT_THAT(update->Commit(), IsError(ErrorKind::kValidationFailed));
     EXPECT_FALSE(ctx->transaction.has_value());
     EXPECT_THAT(deleted, ::testing::SizeIs(3U));
+  }
+}
+
+TEST_F(FastAppendTest, CleanupHookFailureDoesNotSkipStagedFiles) {
+  struct CleanupFailure {
+    const char* name;
+    std::function<Status()> callback;
+  };
+  const std::vector<CleanupFailure> failures{
+      {"error status", []() -> Status { return IOError("cleanup failed"); }},
+      {"standard exception",
+       []() -> Status { throw std::runtime_error("cleanup threw"); }},
+      {"unknown exception", []() -> Status { throw 42; }}};
+  for (const auto& failure : failures) {
+    SCOPED_TRACE(failure.name);
+    for (bool apply_fails : {false, true}) {
+      SCOPED_TRACE(apply_fails);
+      ICEBERG_UNWRAP_OR_FAIL(auto table, catalog_->LoadTable(table_ident_));
+      ICEBERG_UNWRAP_OR_FAIL(auto ctx,
+                             TransactionContext::Make(table, TransactionKind::kUpdate));
+      auto update = std::make_shared<TestSnapshotUpdate>(ctx);
+      update->write_partial = true;
+      update->cleanup_callback = failure.callback;
+      if (apply_fails) {
+        update->apply_callback = [](int) -> Status {
+          return ValidationFailed("original apply failure");
+        };
+      }
+      std::vector<std::string> deleted;
+      update->DeleteWith([&](const std::string& path) {
+        deleted.push_back(path);
+        return file_io_->DeleteFile(path);
+      });
+
+      auto result = update->Commit();
+      if (apply_fails) {
+        EXPECT_THAT(result, ::testing::AllOf(IsError(ErrorKind::kValidationFailed),
+                                             HasErrorMessage("original apply failure")));
+      } else {
+        ASSERT_THAT(result, IsOk());
+        ICEBERG_UNWRAP_OR_FAIL(auto snapshot, ctx->table->current_snapshot());
+        EXPECT_THAT(file_io_->ReadFile(snapshot->manifest_list, std::nullopt), IsOk());
+      }
+      EXPECT_EQ(update->applies, 1);
+      EXPECT_EQ(update->cleanups, 1);
+      EXPECT_EQ(update->finalizes, apply_fails ? 0 : 1);
+      EXPECT_EQ(update->reports, apply_fails ? 0 : 1);
+      ASSERT_THAT(update->partial_paths, ::testing::SizeIs(1));
+      EXPECT_THAT(deleted, ::testing::ElementsAre(update->partial_paths[0]));
+      EXPECT_FALSE(
+          file_io_->ReadFile(update->partial_paths[0], std::nullopt).has_value());
+      EXPECT_THAT(update->Commit(), IsError(ErrorKind::kValidationFailed));
+      EXPECT_EQ(update->cleanups, 1);
+      EXPECT_THAT(deleted, ::testing::SizeIs(1));
+    }
   }
 }
 
