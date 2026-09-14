@@ -888,17 +888,26 @@ TEST_F(FastAppendTest, ReplayApplyFailureStopsRetryAndCleansPartialFiles) {
     const char* message;
   };
   const std::vector<ReplayFailure> failures{
-      {"retryable status",
-       []() -> Status { return RetryableValidationFailed("replay validation failed"); },
-       ErrorKind::kRetryableValidationFailed, "replay validation failed"},
-      {"unknown status",
-       []() -> Status { return CommitStateUnknown("replay validation failed"); },
-       ErrorKind::kCommitStateUnknown, "replay validation failed"},
-      {"standard exception",
-       []() -> Status { throw std::runtime_error("replay callback threw"); },
-       ErrorKind::kValidationFailed, "replay callback threw"},
-      {"unknown exception", []() -> Status { throw 42; }, ErrorKind::kValidationFailed,
-       "Transaction preparation threw an unknown exception"}};
+      {.name = "retryable status",
+       .callback = []() -> Status {
+         return RetryableValidationFailed("replay validation failed");
+       },
+       .kind = ErrorKind::kRetryableValidationFailed,
+       .message = "replay validation failed"},
+      {.name = "unknown status",
+       .callback = []() -> Status {
+         return CommitStateUnknown("replay validation failed");
+       },
+       .kind = ErrorKind::kCommitStateUnknown,
+       .message = "replay validation failed"},
+      {.name = "standard exception",
+       .callback = []() -> Status { throw std::runtime_error("replay callback threw"); },
+       .kind = ErrorKind::kValidationFailed,
+       .message = "replay callback threw"},
+      {.name = "unknown exception",
+       .callback = []() -> Status { throw 42; },
+       .kind = ErrorKind::kValidationFailed,
+       .message = "Transaction preparation threw an unknown exception"}};
   for (const auto& failure : failures) {
     SCOPED_TRACE(failure.name);
     auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
@@ -951,10 +960,11 @@ TEST_F(FastAppendTest, CleanupHookFailureDoesNotSkipStagedFiles) {
     std::function<Status()> callback;
   };
   const std::vector<CleanupFailure> failures{
-      {"error status", []() -> Status { return IOError("cleanup failed"); }},
-      {"standard exception",
-       []() -> Status { throw std::runtime_error("cleanup threw"); }},
-      {"unknown exception", []() -> Status { throw 42; }}};
+      {.name = "error status",
+       .callback = []() -> Status { return IOError("cleanup failed"); }},
+      {.name = "standard exception",
+       .callback = []() -> Status { throw std::runtime_error("cleanup threw"); }},
+      {.name = "unknown exception", .callback = []() -> Status { throw 42; }}};
   for (const auto& failure : failures) {
     SCOPED_TRACE(failure.name);
     for (bool apply_fails : {false, true}) {
