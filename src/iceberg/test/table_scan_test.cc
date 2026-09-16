@@ -303,6 +303,14 @@ TEST_P(TableScanTest, TableScanBuilderValidationErrors) {
   ICEBERG_UNWRAP_OR_FAIL(auto builder3, MakeScanBuilder<DataTableScan>(table_metadata_));
   builder3->UseRef("non-existent-ref");
   EXPECT_THAT(builder3->Build(), IsError(ErrorKind::kValidationFailed));
+
+  // An explicit empty selection still conflicts with an explicit projection schema.
+  ICEBERG_UNWRAP_OR_FAIL(auto builder4, MakeScanBuilder<DataTableScan>(table_metadata_));
+  builder4->Select({}).Project(schema_);
+  EXPECT_THAT(builder4->Build(),
+              ::testing::AllOf(
+                  IsError(ErrorKind::kValidationFailed),
+                  HasErrorMessage("Cannot set projection schema and selected columns")));
 }
 
 TEST_P(TableScanTest, DataTableScanPlanFilesEmpty) {
@@ -320,6 +328,10 @@ TEST_P(TableScanTest, DataTableScanPlanFilesEmpty) {
   ICEBERG_UNWRAP_OR_FAIL(auto scan, builder->Build());
   ICEBERG_UNWRAP_OR_FAIL(auto tasks, scan->PlanFiles());
   EXPECT_TRUE(tasks.empty());
+
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, scan->PlanFilesStream());
+  ICEBERG_UNWRAP_OR_FAIL(auto next, stream->Next());
+  EXPECT_FALSE(next.has_value());
 }
 
 TEST_P(TableScanTest, PlanFilesWithDataManifests) {
@@ -380,6 +392,14 @@ TEST_P(TableScanTest, PlanFilesWithDataManifests) {
   ASSERT_EQ(tasks.size(), 2);
   EXPECT_THAT(GetPaths(tasks), testing::UnorderedElementsAre("/path/to/data1.parquet",
                                                              "/path/to/data2.parquet"));
+
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, scan->PlanFilesStream());
+  scan.reset();
+  ICEBERG_UNWRAP_OR_FAIL(auto streamed_tasks, stream->ToVector());
+  ASSERT_EQ(streamed_tasks.size(), 2);
+  EXPECT_THAT(
+      GetPaths(streamed_tasks),
+      testing::UnorderedElementsAre("/path/to/data1.parquet", "/path/to/data2.parquet"));
 }
 
 TEST_P(TableScanTest, PlanRowLineage) {
@@ -604,22 +624,37 @@ TEST_P(TableScanTest, PlanFilesWithDeleteFiles) {
   std::vector<ManifestEntry> data_entries{
       MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/1,
                 MakeDataFile("/path/to/data1.parquet", part_value,
-                             partitioned_spec_->spec_id(), /*record_count=*/100)),
+                             partitioned_spec_->spec_id(), /*record_count=*/100,
+                             /*lower_id=*/0, /*upper_id=*/10)),
       MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/1,
                 MakeDataFile("/path/to/data2.parquet", part_value,
-                             partitioned_spec_->spec_id(), /*record_count=*/200))};
+                             partitioned_spec_->spec_id(), /*record_count=*/200,
+                             /*lower_id=*/20, /*upper_id=*/30))};
   auto data_manifest =
       WriteDataManifest(version, kSnapshotId, std::move(data_entries), partitioned_spec_);
 
   // Create delete manifest with position delete files
+  auto equality_delete = MakeEqualityDeleteFile("/path/to/eq_delete.parquet", part_value,
+                                                partitioned_spec_->spec_id(), {1});
+  equality_delete->lower_bounds[1] = Literal::Int(20).Serialize().value();
+  equality_delete->upper_bounds[1] = Literal::Int(30).Serialize().value();
+
+  const auto other_part_value = PartitionValues({Literal::Int(1)});
+  auto cross_part_equality_delete =
+      MakeEqualityDeleteFile("/path/to/cross_part_eq_delete.parquet", other_part_value,
+                             partitioned_spec_->spec_id(), {1});
+  cross_part_equality_delete->lower_bounds[1] = Literal::Int(0).Serialize().value();
+  cross_part_equality_delete->upper_bounds[1] = Literal::Int(100).Serialize().value();
+
   std::vector<ManifestEntry> delete_entries{
       MakeEntry(
           ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/2,
           MakePositionDeleteFile("/path/to/pos_delete.parquet", part_value,
                                  partitioned_spec_->spec_id(), "/path/to/data1.parquet")),
       MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/2,
-                MakeEqualityDeleteFile("/path/to/eq_delete.parquet", part_value,
-                                       partitioned_spec_->spec_id(), {1}))};
+                std::move(equality_delete)),
+      MakeEntry(ManifestStatus::kAdded, kSnapshotId, /*sequence_number=*/2,
+                std::move(cross_part_equality_delete))};
   auto delete_manifest = WriteDeleteManifest(
       version, kSnapshotId, std::move(delete_entries), partitioned_spec_);
   std::string manifest_list_path = WriteManifestList(
@@ -662,13 +697,25 @@ TEST_P(TableScanTest, PlanFilesWithDeleteFiles) {
                          MakeScanBuilder<DataTableScan>(metadata_with_manifests));
   ICEBERG_UNWRAP_OR_FAIL(auto scan, builder->Build());
   ICEBERG_UNWRAP_OR_FAIL(auto tasks, scan->PlanFiles());
-  ASSERT_EQ(tasks.size(), 2);
-  EXPECT_THAT(GetPaths(tasks), testing::UnorderedElementsAre("/path/to/data1.parquet",
-                                                             "/path/to/data2.parquet"));
-  // Verify that delete files are associated with the tasks
-  for (const auto& task : tasks) {
-    EXPECT_GT(task->delete_files().size(), 0);
-  }
+  auto verify_tasks = [](const auto& planned_tasks) {
+    ASSERT_EQ(planned_tasks.size(), 2);
+    for (const auto& task : planned_tasks) {
+      ASSERT_EQ(task->delete_files().size(), 1);
+      if (task->data_file()->file_path == "/path/to/data1.parquet") {
+        EXPECT_EQ(task->delete_files().front()->file_path, "/path/to/pos_delete.parquet");
+      } else {
+        EXPECT_EQ(task->data_file()->file_path, "/path/to/data2.parquet");
+        EXPECT_EQ(task->delete_files().front()->file_path, "/path/to/eq_delete.parquet");
+      }
+      EXPECT_TRUE(task->data_file()->lower_bounds.empty());
+      EXPECT_TRUE(task->data_file()->upper_bounds.empty());
+    }
+  };
+  verify_tasks(tasks);
+
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, scan->PlanFilesStream());
+  ICEBERG_UNWRAP_OR_FAIL(auto streamed_tasks, stream->ToVector());
+  verify_tasks(streamed_tasks);
 }
 
 TEST_P(TableScanTest, SchemaWithSelectedColumnsAndFilter) {
@@ -771,6 +818,26 @@ TEST_P(TableScanTest, SchemaWithSelectedColumnsAndFilter) {
     ICEBERG_UNWRAP_OR_FAIL(auto data_field, projected_schema->FindFieldByName("data"));
     EXPECT_TRUE(data_field.has_value());
     EXPECT_EQ(data_field->get().field_id(), 2);
+  }
+
+  // An explicit empty selection is different from the default projection.
+  {
+    ICEBERG_UNWRAP_OR_FAIL(auto builder, MakeScanBuilder<DataTableScan>(metadata));
+    builder->Select({});
+    ICEBERG_UNWRAP_OR_FAIL(auto scan, builder->Build());
+    ICEBERG_UNWRAP_OR_FAIL(auto projected_schema, scan->schema());
+
+    EXPECT_TRUE(projected_schema->fields().empty());
+  }
+
+  // A wildcard selection explicitly projects the full table schema.
+  {
+    ICEBERG_UNWRAP_OR_FAIL(auto builder, MakeScanBuilder<DataTableScan>(metadata));
+    builder->Select({std::string(Schema::kAllColumns)});
+    ICEBERG_UNWRAP_OR_FAIL(auto scan, builder->Build());
+    ICEBERG_UNWRAP_OR_FAIL(auto projected_schema, scan->schema());
+
+    EXPECT_EQ(*projected_schema, *schema);
   }
 }
 

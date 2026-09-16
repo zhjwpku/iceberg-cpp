@@ -190,6 +190,37 @@ TEST_P(TestManifestReader, TestManifestReaderWithEmptyInheritableMetadata) {
   EXPECT_EQ(read_entry.snapshot_id, 1000L);
 }
 
+TEST_P(TestManifestReader, EntriesStreamOwnsReaderResources) {
+  auto version = GetParam();
+  auto file_a =
+      MakeDataFile("/path/to/data-a.parquet", PartitionValues({Literal::Int(0)}));
+  auto file_b =
+      MakeDataFile("/path/to/data-b.parquet", PartitionValues({Literal::Int(1)}));
+
+  std::vector<ManifestEntry> entries;
+  entries.push_back(
+      MakeEntry(ManifestStatus::kAdded, /*snapshot_id=*/1000L, std::move(file_a)));
+  entries.push_back(
+      MakeEntry(ManifestStatus::kAdded, /*snapshot_id=*/1000L, std::move(file_b)));
+  auto manifest = WriteManifest(version, /*snapshot_id=*/1000L, entries);
+
+  ICEBERG_UNWRAP_OR_FAIL(auto reader,
+                         ManifestReader::Make(manifest, file_io_, schema_, spec_));
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, reader->EntriesStream());
+  reader.reset();
+
+  ICEBERG_UNWRAP_OR_FAIL(auto first, stream->Next());
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->data_file->file_path, "/path/to/data-a.parquet");
+
+  ICEBERG_UNWRAP_OR_FAIL(auto second, stream->Next());
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->data_file->file_path, "/path/to/data-b.parquet");
+
+  ICEBERG_UNWRAP_OR_FAIL(auto end, stream->Next());
+  EXPECT_FALSE(end.has_value());
+}
+
 TEST_P(TestManifestReader, DeletedEntriesDoNotInheritFirstRowId) {
   auto version = GetParam();
   if (version < 3) {
@@ -532,8 +563,37 @@ TEST_P(TestManifestReader, TestDropStats) {
   EXPECT_TRUE(read_entry.data_file->upper_bounds.empty());
 }
 
+TEST_P(TestManifestReader, SelectDistinguishesEmptyAndWildcard) {
+  auto version = GetParam();
+  auto file = MakeDataFile("/path/to/data.parquet", PartitionValues({Literal::Int(3)}));
+  auto manifest = WriteManifest(
+      version, /*snapshot_id=*/1000L,
+      {MakeEntry(ManifestStatus::kAdded, /*snapshot_id=*/1000L, std::move(file))});
+
+  auto read_with_projection =
+      [&](const std::vector<std::string>& columns) -> Result<std::vector<ManifestEntry>> {
+    ICEBERG_ASSIGN_OR_RAISE(auto reader,
+                            ManifestReader::Make(manifest, file_io_, schema_, spec_));
+    reader->Select(columns);
+    return reader->Entries();
+  };
+
+  ICEBERG_UNWRAP_OR_FAIL(auto empty_entries, read_with_projection({}));
+  ASSERT_EQ(empty_entries.size(), 1);
+  EXPECT_TRUE(empty_entries.front().data_file->file_path.empty());
+  EXPECT_EQ(empty_entries.front().data_file->record_count, 1);
+  EXPECT_EQ(empty_entries.front().data_file->partition.num_fields(), 0);
+
+  ICEBERG_UNWRAP_OR_FAIL(auto all_entries,
+                         read_with_projection({std::string(Schema::kAllColumns)}));
+  ASSERT_EQ(all_entries.size(), 1);
+  EXPECT_EQ(all_entries.front().data_file->file_path, "/path/to/data.parquet");
+  ASSERT_EQ(all_entries.front().data_file->partition.num_fields(), 1);
+  EXPECT_EQ(all_entries.front().data_file->partition.values().front(), Literal::Int(3));
+}
+
 TEST(ManifestReaderStaticTest, TestShouldDropStats) {
-  EXPECT_FALSE(ManifestReader::ShouldDropStats({}));
+  EXPECT_TRUE(ManifestReader::ShouldDropStats({}));
   EXPECT_FALSE(ManifestReader::ShouldDropStats({std::string(Schema::kAllColumns)}));
   EXPECT_TRUE(ManifestReader::ShouldDropStats({"file_path", "file_format", "partition"}));
   EXPECT_TRUE(
@@ -546,6 +606,15 @@ TEST(ManifestReaderStaticTest, TestShouldDropStats) {
       {"file_path", "value_counts", "null_value_counts", "lower_bounds"}));
   EXPECT_FALSE(
       ManifestReader::ShouldDropStats({"file_path", "record_count", "value_counts"}));
+}
+
+TEST(ManifestReaderStaticTest, WithStatsColumnsHandlesEmptyAndSelectAll) {
+  EXPECT_THAT(ManifestReader::WithStatsColumns({}),
+              testing::UnorderedElementsAre(
+                  "value_counts", "null_value_counts", "nan_value_counts", "lower_bounds",
+                  "upper_bounds", "column_sizes", "record_count"));
+  EXPECT_THAT(ManifestReader::WithStatsColumns({std::string(Schema::kAllColumns)}),
+              testing::ElementsAre(Schema::kAllColumns));
 }
 
 INSTANTIATE_TEST_SUITE_P(ManifestReaderVersions, TestManifestReader,
