@@ -36,9 +36,16 @@ namespace iceberg {
 /// Any created `PendingUpdate` instance is tracked by the `Transaction` instance
 /// and commit is also delegated to the `Transaction` instance.
 ///
+/// Lifecycle: an update is configured through its fluent mutators, then committed
+/// exactly once. After that point the update is owned by its transaction until the
+/// transaction reaches a terminal state.
+///
 /// \note Implementations are expected to use builder pattern and errors
-/// should be handled by the ErrorCollector base class.
-class ICEBERG_EXPORT PendingUpdate : public ErrorCollector {
+/// should be handled by the ErrorCollector base class. Configuration errors are
+/// collected and surfaced by `Commit()`. Callers must not mutate input objects or
+/// reconfigure an update after its first commit.
+class ICEBERG_EXPORT PendingUpdate : public ErrorCollector,
+                                     public std::enable_shared_from_this<PendingUpdate> {
  public:
   enum class Kind : uint8_t {
     kExpireSnapshots,
@@ -66,23 +73,14 @@ class ICEBERG_EXPORT PendingUpdate : public ErrorCollector {
   ///         - ValidationFailed: if it cannot be applied to the current table metadata.
   ///         - CommitFailed: if it cannot be committed due to conflicts.
   ///         - CommitStateUnknown: unknown status, no cleanup should be done.
+  /// \note The update must be owned by a `std::shared_ptr` before calling Commit().
+  /// An Apply failure is terminal and cannot be corrected within the same transaction.
   virtual Status Commit();
 
-  /// \brief Finalize the pending update.
-  ///
-  /// This method is called after the update is committed.
-  /// Implementations should override this method to clean up any resources.
-  ///
-  /// \param commit_result The committed table metadata when the commit succeeds, or the
-  /// commit error when it fails.
-  /// \return Status indicating success or failure
-  virtual Status Finalize(Result<const TableMetadata*> commit_result);
-
-  // Non-copyable, movable
   PendingUpdate(const PendingUpdate&) = delete;
   PendingUpdate& operator=(const PendingUpdate&) = delete;
-  PendingUpdate(PendingUpdate&&) noexcept = default;
-  PendingUpdate& operator=(PendingUpdate&&) noexcept = default;
+  PendingUpdate(PendingUpdate&&) = delete;
+  PendingUpdate& operator=(PendingUpdate&&) = delete;
 
   ~PendingUpdate() override;
 
@@ -91,7 +89,20 @@ class ICEBERG_EXPORT PendingUpdate : public ErrorCollector {
 
   const TableMetadata& base() const;
 
+  Status CheckCommitAllowed() const;
+
+  /// \brief Discard this generation's staging, retaining applied operation intent.
+  virtual Status CleanStaged() { return {}; }
+  /// \brief Complete a known successful commit. Called only by Transaction with the
+  /// final committed table metadata.
+  virtual Status Finalize(const TableMetadata& committed);
+
   std::shared_ptr<TransactionContext> ctx_;
+
+ private:
+  friend class Transaction;
+
+  bool commit_called_ = false;
 };
 
 }  // namespace iceberg

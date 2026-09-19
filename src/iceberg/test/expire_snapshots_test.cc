@@ -37,9 +37,14 @@
 #include "iceberg/snapshot.h"
 #include "iceberg/statistics_file.h"
 #include "iceberg/table_metadata.h"
+#include "iceberg/table_properties.h"
 #include "iceberg/test/executor.h"
 #include "iceberg/test/matchers.h"
+#include "iceberg/test/mock_catalog.h"
 #include "iceberg/test/update_test_base.h"
+#include "iceberg/transaction.h"
+#include "iceberg/update/fast_append.h"
+#include "iceberg/update/set_snapshot.h"
 
 namespace iceberg {
 
@@ -291,21 +296,15 @@ TEST_F(ExpireSnapshotsCleanupTest, RetainsUnreferencedSnapshotAtExpireThreshold)
               testing::Not(testing::Contains(unreferenced_snapshot_id)));
 }
 
-TEST_F(ExpireSnapshotsTest, FinalizeRequiresCommittedMetadata) {
+TEST_F(ExpireSnapshotsTest, ApplyDoesNotDeleteBeforeCommit) {
   std::vector<std::string> deleted_files;
-  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewExpireSnapshots());
   update->DeleteWith(
       [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
-
-  // Apply first so apply_result_ is cached
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
   EXPECT_EQ(result.snapshot_ids_to_remove.size(), 1);
-
-  // A successful finalize now requires the committed metadata from the catalog.
-  auto finalize_status = update->Finalize(static_cast<const TableMetadata*>(nullptr));
-  EXPECT_THAT(finalize_status, IsError(ErrorKind::kInvalidArgument));
-  EXPECT_THAT(finalize_status,
-              HasErrorMessage("Missing committed table metadata for cleanup"));
+  EXPECT_THAT(txn->Abort(), IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
@@ -319,29 +318,103 @@ TEST_F(ExpireSnapshotsTest, CleanupNoneSkipsDeletion) {
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
   EXPECT_EQ(result.snapshot_ids_to_remove.size(), 1);
 
-  // With kNone cleanup level, Finalize should skip all file deletion
-  auto finalize_status = update->Finalize(static_cast<const TableMetadata*>(nullptr));
-  EXPECT_THAT(finalize_status, IsOk());
+  // With kNone cleanup level, Commit should skip all file deletion
+  auto commit_status = update->Commit();
+  EXPECT_THAT(commit_status, IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
-TEST_F(ExpireSnapshotsTest, FinalizeSkippedOnCommitError) {
+TEST_F(ExpireSnapshotsTest, AbortSkipsExpirationDeletion) {
   std::vector<std::string> deleted_files;
-  ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewExpireSnapshots());
   update->DeleteWith(
       [&deleted_files](const std::string& path) { deleted_files.push_back(path); });
-
-  ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
-  EXPECT_EQ(result.snapshot_ids_to_remove.size(), 1);
-
-  // Simulate a commit failure - Finalize should not delete any files
-  auto finalize_status = update->Finalize(Result<const TableMetadata*>(std::unexpected(
-      Error{.kind = ErrorKind::kCommitFailed, .message = "simulated failure"})));
-  EXPECT_THAT(finalize_status, IsOk());
+  EXPECT_THAT(update->Commit(), IsOk());
+  EXPECT_THAT(txn->Abort(), IsOk());
+  EXPECT_THAT(txn->Abort(), IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
-TEST_F(ExpireSnapshotsTest, FinalizeSkipsWhenNothingExpired) {
+TEST_F(ExpireSnapshotsCleanupTest, CommitFailureSkipsExpirationDeletion) {
+  const auto expired_list = table_location_ + "/metadata/expired-list.avro";
+  const auto current_list = table_location_ + "/metadata/current-list.avro";
+  WriteManifestList(expired_list, kExpiredSnapshotId, 0, kExpiredSequenceNumber, {});
+  WriteManifestList(current_list, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_list, current_list);
+
+  auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
+  EXPECT_CALL(*mock, UpdateTable(::testing::_, ::testing::_, ::testing::_))
+      .Times(1)
+      .WillOnce(::testing::Return(CommitFailed("injected commit failure")));
+  auto metadata = std::make_shared<TableMetadata>(*table_->metadata());
+  metadata->properties.Set(TableProperties::kCommitNumRetries, 0);
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto table,
+      Table::Make(table_->name(), metadata, std::string(table_->metadata_file_location()),
+                  file_io_, mock));
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto update, txn->NewExpireSnapshots());
+  std::vector<std::string> deleted_files;
+  update->ExpireSnapshotId(kExpiredSnapshotId).DeleteWith([&](const std::string& path) {
+    deleted_files.push_back(path);
+  });
+  ASSERT_THAT(update->Commit(), IsOk());
+  EXPECT_FALSE(txn->current().SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_TRUE(deleted_files.empty());
+
+  EXPECT_THAT(txn->Commit(),
+              ::testing::AllOf(IsError(ErrorKind::kCommitFailed),
+                               HasErrorMessage("injected commit failure")));
+  EXPECT_EQ(txn->state(), TransactionState::kFailed);
+  EXPECT_THAT(txn->Abort(), IsOk());
+  EXPECT_TRUE(deleted_files.empty());
+  EXPECT_TRUE(ReloadMetadata()->SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_THAT(file_io_->ReadFile(expired_list, std::nullopt), IsOk());
+  EXPECT_THAT(file_io_->ReadFile(current_list, std::nullopt), IsOk());
+}
+
+TEST_F(ExpireSnapshotsCleanupTest, CommitStateUnknownPreservesExpiredFiles) {
+  const auto data_path = table_location_ + "/data/unknown-expired.parquet";
+  const auto manifest_path = table_location_ + "/metadata/unknown-expired.avro";
+  const auto expired_list = table_location_ + "/metadata/unknown-expired-list.avro";
+  const auto current_list = table_location_ + "/metadata/unknown-current-list.avro";
+  ASSERT_THAT(file_io_->WriteFile(data_path, "data"), IsOk());
+  auto data_file = MakeDataFile(data_path);
+  data_file->partition_spec_id = DefaultSpec()->spec_id();
+  auto manifest = WriteDataManifest(manifest_path, kExpiredSnapshotId,
+                                    {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId,
+                                               kExpiredSequenceNumber, data_file)});
+  WriteManifestList(expired_list, kExpiredSnapshotId, 0, kExpiredSequenceNumber,
+                    {manifest});
+  WriteManifestList(current_list, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_list, current_list);
+
+  auto mock = std::make_shared<::testing::NiceMock<MockCatalog>>();
+  EXPECT_CALL(*mock, UpdateTable(::testing::_, ::testing::_, ::testing::_))
+      .WillOnce(::testing::Return(CommitStateUnknown("unknown commit state")));
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto table,
+      Table::Make(table_->name(), table_->metadata(),
+                  std::string(table_->metadata_file_location()), file_io_, mock));
+  ICEBERG_UNWRAP_OR_FAIL(auto update, table->NewExpireSnapshots());
+  std::vector<std::string> deleted_files;
+  update->ExpireSnapshotId(kExpiredSnapshotId).DeleteWith([&](const std::string& path) {
+    deleted_files.push_back(path);
+    return file_io_->DeleteFile(path);
+  });
+
+  EXPECT_THAT(update->Commit(), IsError(ErrorKind::kCommitStateUnknown));
+  EXPECT_TRUE(deleted_files.empty());
+  EXPECT_TRUE(ReloadMetadata()->SnapshotById(kExpiredSnapshotId).has_value());
+  for (const auto& path : {data_path, manifest_path, expired_list}) {
+    EXPECT_THAT(file_io_->ReadFile(path, std::nullopt), IsOk());
+  }
+}
+
+TEST_F(ExpireSnapshotsTest, CommitSkipsWhenNothingExpired) {
   std::vector<std::string> deleted_files;
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
   update->RetainLast(2);
@@ -351,9 +424,9 @@ TEST_F(ExpireSnapshotsTest, FinalizeSkipsWhenNothingExpired) {
   ICEBERG_UNWRAP_OR_FAIL(auto result, update->Apply());
   EXPECT_TRUE(result.snapshot_ids_to_remove.empty());
 
-  // No snapshots expired, so Finalize should not delete any files
-  auto finalize_status = update->Finalize(static_cast<const TableMetadata*>(nullptr));
-  EXPECT_THAT(finalize_status, IsOk());
+  // No snapshots expired, so Commit should not delete any files
+  auto commit_status = update->Commit();
+  EXPECT_THAT(commit_status, IsOk());
   EXPECT_TRUE(deleted_files.empty());
 }
 
@@ -361,7 +434,7 @@ TEST_F(ExpireSnapshotsTest, CommitWithCleanupNone) {
   ICEBERG_UNWRAP_OR_FAIL(auto update, table_->NewExpireSnapshots());
   update->CleanupLevel(CleanupLevel::kNone);
 
-  // Commit should succeed - Finalize is called internally but skips cleanup
+  // Commit should succeed and skip cleanup
   EXPECT_THAT(update->Commit(), IsOk());
 
   // Verify snapshot was removed from metadata
@@ -1014,6 +1087,104 @@ TEST_F(ExpireSnapshotsCleanupTest, CommitIgnoresMalformedSourceSnapshotIdCleanup
   auto committed_metadata = ReloadMetadata();
   EXPECT_EQ(committed_metadata->snapshots.size(), 1);
   EXPECT_EQ(committed_metadata->snapshots.at(0)->snapshot_id, kCurrentSnapshotId);
+}
+
+class ExpirationLifecycleTest
+    : public ExpireSnapshotsCleanupTest,
+      public ::testing::WithParamInterface<std::tuple<CleanupLevel, bool, bool, bool>> {};
+
+TEST_P(ExpirationLifecycleTest, LaterReferencesSuppressPhysicalDeletion) {
+  auto [cleanup_level, custom_delete, reattach, retry] = GetParam();
+  const auto data_path = table_location_ + "/data/reattached.parquet";
+  const auto manifest_path = table_location_ + "/metadata/expired.avro";
+  const auto expired_list = table_location_ + "/metadata/expired-list.avro";
+  const auto current_list = table_location_ + "/metadata/current-list.avro";
+  auto data_file = MakeDataFile(data_path);
+  data_file->partition_spec_id = DefaultSpec()->spec_id();
+  ASSERT_THAT(file_io_->WriteFile(data_path, "data"), IsOk());
+  auto manifest = WriteDataManifest(manifest_path, kExpiredSnapshotId,
+                                    {MakeEntry(ManifestStatus::kAdded, kExpiredSnapshotId,
+                                               kExpiredSequenceNumber, data_file)});
+  WriteManifestList(expired_list, kExpiredSnapshotId, 0, kExpiredSequenceNumber,
+                    {manifest});
+  WriteManifestList(current_list, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_list, current_list);
+  if (retry) {
+    FailCommits(1);
+  }
+  ICEBERG_UNWRAP_OR_FAIL(auto txn, table_->NewTransaction());
+  ICEBERG_UNWRAP_OR_FAIL(auto expire, txn->NewExpireSnapshots());
+  expire->ExpireSnapshotId(kExpiredSnapshotId).CleanupLevel(cleanup_level);
+  int deletes = 0;
+  if (custom_delete) {
+    expire->DeleteWith([&](const std::string& path) {
+      ++deletes;
+      std::ignore = file_io_->DeleteFile(path);
+    });
+  }
+  ASSERT_THAT(expire->Commit(), IsOk());
+  if (reattach) {
+    // A later update reuses the expired data file, so final cleanup must preserve it.
+    ICEBERG_UNWRAP_OR_FAIL(auto append, txn->NewFastAppend());
+    append->AppendFile(data_file);
+    ASSERT_THAT(append->Commit(), IsOk());
+  } else {
+    ICEBERG_UNWRAP_OR_FAIL(auto noop, txn->NewSetSnapshot());
+    noop->SetCurrentSnapshot(kCurrentSnapshotId);
+    ASSERT_THAT(noop->Commit(), IsOk());
+  }
+  ASSERT_THAT(txn->Commit(), IsOk());
+  EXPECT_FALSE(ReloadMetadata()->SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_EQ(file_io_->ReadFile(data_path, std::nullopt).has_value(),
+            reattach || cleanup_level == CleanupLevel::kMetadataOnly);
+  EXPECT_FALSE(file_io_->ReadFile(manifest_path, std::nullopt).has_value());
+  EXPECT_FALSE(file_io_->ReadFile(expired_list, std::nullopt).has_value());
+  if (custom_delete) {
+    EXPECT_GT(deletes, 0);
+  }
+  EXPECT_THAT(txn->Commit(), IsError(ErrorKind::kValidationFailed));
+  EXPECT_THAT(txn->Abort(), IsError(ErrorKind::kValidationFailed));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CleanupPolicies, ExpirationLifecycleTest,
+    ::testing::Combine(::testing::Values(CleanupLevel::kAll, CleanupLevel::kMetadataOnly),
+                       ::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
+
+TEST_F(ExpireSnapshotsCleanupTest, RetryRecomputesExpirationAgainstRefreshedMetadata) {
+  const auto expired_list = table_location_ + "/metadata/expire-before-retry.avro";
+  const auto current_list = table_location_ + "/metadata/current-before-retry.avro";
+  WriteManifestList(expired_list, kExpiredSnapshotId, 0, kExpiredSequenceNumber, {});
+  WriteManifestList(current_list, kCurrentSnapshotId, kExpiredSnapshotId,
+                    kCurrentSequenceNumber, {});
+  RewriteTableWithManifestLists(expired_list, current_list);
+  auto data_file = MakeDataFile(table_location_ + "/data/concurrent.parquet");
+  data_file->partition_spec_id = DefaultSpec()->spec_id();
+  FailCommits(1, [&](int attempt) {
+    if (attempt == 0) {
+      ICEBERG_UNWRAP_OR_FAIL(auto latest, catalog_->LoadTable(table_ident_));
+      ICEBERG_UNWRAP_OR_FAIL(auto append, latest->NewFastAppend());
+      append->AppendFile(data_file);
+      ASSERT_THAT(append->Commit(), IsOk());
+    }
+  });
+  ICEBERG_UNWRAP_OR_FAIL(auto expire, table_->NewExpireSnapshots());
+  expire
+      ->ExpireOlderThan(
+          (CurrentTimePointMs() + std::chrono::hours(1)).time_since_epoch().count())
+      .RetainLast(1);
+  std::vector<std::string> deleted;
+  expire->DeleteWith([&](const std::string& path) { deleted.push_back(path); });
+  ICEBERG_UNWRAP_OR_FAIL(auto preview, expire->Apply());
+  EXPECT_THAT(preview.snapshot_ids_to_remove, ::testing::ElementsAre(kExpiredSnapshotId));
+  ASSERT_THAT(expire->Commit(), IsOk());
+  auto metadata = ReloadMetadata();
+  EXPECT_FALSE(metadata->SnapshotById(kExpiredSnapshotId).has_value());
+  EXPECT_FALSE(metadata->SnapshotById(kCurrentSnapshotId).has_value());
+  EXPECT_EQ(metadata->snapshots.size(), 1U);
+  EXPECT_THAT(deleted, ::testing::Contains(expired_list));
+  EXPECT_THAT(deleted, ::testing::Contains(current_list));
 }
 
 }  // namespace iceberg

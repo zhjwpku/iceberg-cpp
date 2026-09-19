@@ -654,9 +654,9 @@ Result<UpdateSchema::ApplyResult> UpdateSchema::Apply() {
   }
 
   auto new_fields = temp_schema->fields() | std::ranges::to<std::vector<SchemaField>>();
-  ICEBERG_ASSIGN_OR_RAISE(
-      auto new_schema,
-      Schema::Make(std::move(new_fields), schema_->schema_id(), fresh_identifier_ids));
+  ICEBERG_ASSIGN_OR_RAISE(auto new_schema,
+                          Schema::Make(std::move(new_fields), schema_->schema_id(),
+                                       std::move(fresh_identifier_ids)));
   ICEBERG_RETURN_UNEXPECTED(new_schema->Validate(base().format_version));
 
   std::unordered_map<std::string, std::string> updated_props;

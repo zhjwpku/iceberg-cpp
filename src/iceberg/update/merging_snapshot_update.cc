@@ -662,26 +662,21 @@ Status MergingSnapshotUpdate::AddManifest(ManifestFile manifest) {
       return InvalidArgument("Cannot append manifest with assigned first row ID: {}",
                              manifest.manifest_path);
     }
-    appended_manifests_summary_.AddedManifest(manifest);
     append_manifests_.push_back(std::move(manifest));
   } else {
-    ICEBERG_ASSIGN_OR_RAISE(auto copied, CopyManifest(manifest, /*update_summary=*/true));
     append_manifests_to_copy_.push_back(std::move(manifest));
-    rewritten_append_manifests_.push_back(std::move(copied));
   }
   return {};
 }
 
-Result<ManifestFile> MergingSnapshotUpdate::CopyManifest(const ManifestFile& manifest,
-                                                         bool update_summary) {
+Result<ManifestFile> MergingSnapshotUpdate::CopyManifest(const ManifestFile& manifest) {
   const TableMetadata& current = base();
   ICEBERG_ASSIGN_OR_RAISE(auto schema, SnapshotUtil::SchemaFor(current, target_branch()));
   ICEBERG_ASSIGN_OR_RAISE(auto spec,
                           current.PartitionSpecById(manifest.partition_spec_id));
   std::string path = ManifestPath();
   return CopyAppendManifest(manifest, ctx_->table->io(), schema, spec, SnapshotId(), path,
-                            current.format_version,
-                            update_summary ? &appended_manifests_summary_ : nullptr);
+                            current.format_version, &appended_manifests_summary_);
 }
 
 // -------------------------------------------------------------------------
@@ -824,6 +819,7 @@ MergingSnapshotUpdate::MergeDVs() {
   auto output_path = location_provider->NewDataLocation(
       std::format("merged-dvs-{}-{}.puffin", SnapshotId(), ++dv_merge_attempt_));
 
+  RegisterStagedFile(output_path);
   auto merged_files = DVUtil::MergeAndWriteDVs(groups, output_path, ctx_->table->io());
   if (!merged_files) {
     std::ignore = DeleteFile(output_path);
@@ -853,6 +849,9 @@ MergingSnapshotUpdate::MergeDVs() {
     merged_dvs_.push_back(merged);
     result.push_back(std::move(merged));
   }
+
+  // The operation-specific merged DV cache now owns cleanup for this file.
+  UnregisterStagedFile(output_path);
 
   return result;
 }
@@ -924,6 +923,11 @@ Result<std::vector<ManifestFile>> MergingSnapshotUpdate::WriteNewDeleteManifests
 
 Result<std::vector<ManifestFile>> MergingSnapshotUpdate::Apply(
     const TableMetadata& metadata_to_update, const std::shared_ptr<Snapshot>& snapshot) {
+  appended_manifests_summary_.Clear();
+  for (const auto& manifest : append_manifests_) {
+    appended_manifests_summary_.AddedManifest(manifest);
+  }
+
   ICEBERG_RETURN_UNEXPECTED(ManagersReady());
 
   // Re-validate buffered delete files against the current format version. A format
@@ -988,8 +992,7 @@ Result<std::vector<ManifestFile>> MergingSnapshotUpdate::Apply(
   ICEBERG_ASSIGN_OR_RAISE(auto written_data_manifests, WriteNewDataManifests());
   if (rewritten_append_manifests_.empty() && !append_manifests_to_copy_.empty()) {
     for (const auto& manifest : append_manifests_to_copy_) {
-      ICEBERG_ASSIGN_OR_RAISE(auto copied, CopyManifest(manifest,
-                                                        /*update_summary=*/false));
+      ICEBERG_ASSIGN_OR_RAISE(auto copied, CopyManifest(manifest));
       rewritten_append_manifests_.push_back(std::move(copied));
     }
   }

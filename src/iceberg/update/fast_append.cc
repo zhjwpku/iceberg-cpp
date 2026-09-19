@@ -35,11 +35,11 @@
 
 namespace iceberg {
 
-Result<std::unique_ptr<FastAppend>> FastAppend::Make(
+Result<std::shared_ptr<FastAppend>> FastAppend::Make(
     std::string table_name, std::shared_ptr<TransactionContext> ctx) {
   ICEBERG_PRECHECK(!table_name.empty(), "Table name cannot be empty");
   ICEBERG_PRECHECK(ctx != nullptr, "Cannot create FastAppend without a context");
-  return std::unique_ptr<FastAppend>(
+  return std::shared_ptr<FastAppend>(
       new FastAppend(std::move(table_name), std::move(ctx)));
 }
 
@@ -75,14 +75,10 @@ FastAppend& FastAppend::AppendManifest(const ManifestFile& manifest) {
                         "Sequence number must be assigned during commit");
 
   if (can_inherit_snapshot_id() && manifest.added_snapshot_id == kInvalidSnapshotId) {
-    appended_manifests_summary_.AddedManifest(manifest);
     append_manifests_.push_back(manifest);
   } else {
     // The manifest must be rewritten with this update's snapshot ID
-    ICEBERG_BUILDER_ASSIGN_OR_RETURN(auto copied_manifest,
-                                     CopyManifest(manifest, /*update_summary=*/true));
     append_manifests_to_copy_.push_back(manifest);
-    rewritten_append_manifests_.push_back(std::move(copied_manifest));
   }
 
   return *this;
@@ -93,14 +89,17 @@ std::string FastAppend::operation() { return DataOperation::kAppend; }
 Result<std::vector<ManifestFile>> FastAppend::Apply(
     const TableMetadata& metadata_to_update, const std::shared_ptr<Snapshot>& snapshot) {
   std::vector<ManifestFile> manifests;
+  appended_manifests_summary_.Clear();
+  for (const auto& manifest : append_manifests_) {
+    appended_manifests_summary_.AddedManifest(manifest);
+  }
 
   ICEBERG_ASSIGN_OR_RAISE(auto new_written_manifests, WriteNewManifests());
   // A retry cleanup deletes copied append manifests and clears the rewritten
   // list; rebuild them from the original appended manifests before re-applying.
   if (rewritten_append_manifests_.empty() && !append_manifests_to_copy_.empty()) {
     for (const auto& manifest : append_manifests_to_copy_) {
-      ICEBERG_ASSIGN_OR_RAISE(auto copied_manifest,
-                              CopyManifest(manifest, /*update_summary=*/false));
+      ICEBERG_ASSIGN_OR_RAISE(auto copied_manifest, CopyManifest(manifest));
       rewritten_append_manifests_.push_back(std::move(copied_manifest));
     }
   }
@@ -184,21 +183,11 @@ Status FastAppend::CleanUncommitted(const std::unordered_set<std::string>& commi
   return {};
 }
 
-bool FastAppend::CleanupAfterCommit() const {
-  // Cleanup after committing is disabled for FastAppend unless append manifests
-  // were copied or need to be copied on retry because:
-  // 1.) Directly appended manifests are never rewritten
-  // 2.) Manifests which are written out as part of AppendFile are already cleaned
-  //     up between commit attempts in WriteNewManifests
-  return !rewritten_append_manifests_.empty() || !append_manifests_to_copy_.empty();
-}
-
 Result<std::shared_ptr<PartitionSpec>> FastAppend::Spec(int32_t spec_id) {
   return base().PartitionSpecById(spec_id);
 }
 
-Result<ManifestFile> FastAppend::CopyManifest(const ManifestFile& manifest,
-                                              bool update_summary) {
+Result<ManifestFile> FastAppend::CopyManifest(const ManifestFile& manifest) {
   const TableMetadata& current = base();
   ICEBERG_ASSIGN_OR_RAISE(auto schema, current.Schema());
   ICEBERG_ASSIGN_OR_RAISE(auto spec,
@@ -211,7 +200,7 @@ Result<ManifestFile> FastAppend::CopyManifest(const ManifestFile& manifest,
   // Copy the manifest with the new snapshot ID.
   return CopyAppendManifest(manifest, ctx_->table->io(), schema, spec, snapshot_id,
                             new_manifest_path, current.format_version,
-                            update_summary ? &appended_manifests_summary_ : nullptr);
+                            &appended_manifests_summary_);
 }
 
 Result<std::vector<ManifestFile>> FastAppend::WriteNewManifests() {

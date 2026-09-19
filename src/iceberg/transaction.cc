@@ -53,6 +53,7 @@
 #include "iceberg/update/update_sort_order.h"
 #include "iceberg/update/update_statistics.h"
 #include "iceberg/util/checked_cast.h"
+#include "iceberg/util/error_util_internal.h"
 #include "iceberg/util/location_util.h"
 #include "iceberg/util/macros.h"
 #include "iceberg/util/retry_util.h"
@@ -123,9 +124,7 @@ Result<std::shared_ptr<Transaction>> Transaction::Make(std::shared_ptr<Table> ta
 Result<std::shared_ptr<Transaction>> Transaction::Make(
     std::shared_ptr<TransactionContext> ctx) {
   ICEBERG_PRECHECK(ctx != nullptr, "TransactionContext cannot be null");
-  auto txn = std::shared_ptr<Transaction>(new Transaction(ctx));
-  ctx->transaction = std::weak_ptr<Transaction>(txn);
-  return txn;
+  return std::shared_ptr<Transaction>(new Transaction(std::move(ctx)));
 }
 
 const std::shared_ptr<Table>& Transaction::table() const { return ctx_->table; }
@@ -138,16 +137,56 @@ std::string Transaction::MetadataFileLocation(std::string_view filename) const {
   return ctx_->MetadataFileLocation(filename);
 }
 
-Status Transaction::AddUpdate(const std::shared_ptr<PendingUpdate>& update) {
-  ICEBERG_CHECK(last_update_committed_,
-                "Cannot add update when previous update is not committed");
-
-  pending_updates_.push_back(update);
-  last_update_committed_ = false;
+Status Transaction::CheckReady() const {
+  ICEBERG_CHECK(state_ == TransactionState::kReady, "Transaction is not ready (state {})",
+                static_cast<int>(state_));
   return {};
 }
 
-Status Transaction::Apply(PendingUpdate& update) {
+Status Transaction::AddUpdate(const std::shared_ptr<PendingUpdate>& update) {
+  ICEBERG_RETURN_UNEXPECTED(CheckReady());
+  ICEBERG_PRECHECK(update && update->ctx_.get() == ctx_.get(),
+                   "Update must belong to this transaction context");
+  ICEBERG_CHECK(!update->commit_called_, "Update has already been committed");
+  pending_updates_.push_back(update);
+  state_ = TransactionState::kUpdatePending;
+  return {};
+}
+
+Status Transaction::CommitUpdate(PendingUpdate& update) {
+  ICEBERG_CHECK(state_ == TransactionState::kUpdatePending,
+                "Transaction has no pending operation (state {})",
+                static_cast<int>(state_));
+  ICEBERG_CHECK(!pending_updates_.empty() && pending_updates_.back().get() == &update,
+                "Update is not the current pending operation");
+  update.commit_called_ = true;
+  Status status;
+  try {
+    status = ApplyUpdate(update);
+  } catch (const std::exception& e) {
+    status = ValidationFailed("Update Apply threw: {}", e.what());
+  } catch (...) {
+    status = ValidationFailed("Update Apply threw an unknown exception");
+  }
+  if (!status) {
+    state_ = TransactionState::kFailed;
+    CleanupUpdates();
+    return status;
+  }
+  state_ = TransactionState::kReady;
+  return {};
+}
+
+Status Transaction::ReplayUpdates() {
+  ICEBERG_CHECK(state_ == TransactionState::kReady,
+                "Replay requires a ready transaction");
+  for (const auto& update : pending_updates_) {
+    ICEBERG_RETURN_UNEXPECTED(ApplyUpdate(*update));
+  }
+  return {};
+}
+
+Status Transaction::ApplyUpdate(PendingUpdate& update) {
   switch (update.kind()) {
     case PendingUpdate::Kind::kExpireSnapshots:
       ICEBERG_RETURN_UNEXPECTED(
@@ -198,9 +237,7 @@ Status Transaction::Apply(PendingUpdate& update) {
                           static_cast<int32_t>(update.kind()));
   }
 
-  last_update_committed_ = true;
-
-  return {};
+  return ctx_->metadata_builder->CheckErrors();
 }
 
 Status Transaction::ApplyExpireSnapshots(ExpireSnapshots& update) {
@@ -294,9 +331,10 @@ Status Transaction::ApplyUpdateSnapshot(SnapshotUpdate& update) {
   ICEBERG_RETURN_UNEXPECTED(temp_update->CheckErrors());
 
   if (temp_update->changes().empty()) {
-    // Do not commit if the metadata has not changed. for example, this may happen
-    // when setting the current snapshot to an ID that is already current. note that
-    // this check uses identity.
+    // A no-op may still write temporary files. Clean them now; the update remains
+    // registered so it can be replayed after a refresh.
+    internal::LogAndIgnoreFailure("Update staging cleanup",
+                                  [&update] { return update.CleanStaged(); });
     return {};
   }
 
@@ -358,78 +396,124 @@ Status Transaction::ApplyUpdatePartitionStatistics(UpdatePartitionStatistics& up
 }
 
 Result<std::shared_ptr<Table>> Transaction::Commit() {
-  ICEBERG_CHECK(!committed_, "Transaction already committed");
-  ICEBERG_CHECK(last_update_committed_,
-                "Cannot commit transaction when previous update is not committed");
-
-  const auto& updates = ctx_->metadata_builder->changes();
-  if (updates.empty()) {
-    committed_ = true;
-    return ctx_->table;
+  ICEBERG_RETURN_UNEXPECTED(CheckReady());
+  Result<std::shared_ptr<Table>> commit_result = ctx_->table;
+  try {
+    auto builder_status = ctx_->metadata_builder->CheckErrors();
+    if (!builder_status) {
+      commit_result = std::unexpected(builder_status.error());
+    } else {
+      const auto& props = ctx_->table->properties();
+      const int32_t num_retries =
+          CanRetry() ? static_cast<int32_t>(props.Get(TableProperties::kCommitNumRetries))
+                     : 0;
+      bool is_first_attempt = true;
+      commit_result =
+          MakeCommitRetryRunner(num_retries,
+                                props.Get(TableProperties::kCommitMinRetryWaitMs),
+                                props.Get(TableProperties::kCommitMaxRetryWaitMs),
+                                props.Get(TableProperties::kCommitTotalRetryTimeMs))
+              .Run([this, &is_first_attempt]() -> Result<std::shared_ptr<Table>> {
+                auto result = CommitOnce(is_first_attempt);
+                is_first_attempt = false;
+                return result;
+              });
+    }
+  } catch (const std::exception& e) {
+    // CommitOnce handles catalog exceptions, so this failed before the commit.
+    commit_result = ValidationFailed("Transaction preparation threw: {}", e.what());
+  } catch (...) {
+    commit_result =
+        ValidationFailed("Transaction preparation threw an unknown exception");
   }
 
-  const auto& props = ctx_->table->properties();
-  int32_t num_retries =
-      CanRetry() ? static_cast<int32_t>(props.Get(TableProperties::kCommitNumRetries))
-                 : 0;
-  int32_t min_wait_ms = props.Get(TableProperties::kCommitMinRetryWaitMs);
-  int32_t max_wait_ms = props.Get(TableProperties::kCommitMaxRetryWaitMs);
-  int32_t total_timeout_ms = props.Get(TableProperties::kCommitTotalRetryTimeMs);
-
-  bool is_first_attempt = true;
-  auto commit_result =
-      MakeCommitRetryRunner(num_retries, min_wait_ms, max_wait_ms, total_timeout_ms)
-          .Run([this, &is_first_attempt]() -> Result<std::shared_ptr<Table>> {
-            auto result = CommitOnce(is_first_attempt);
-            is_first_attempt = false;
-            return result;
-          });
-
-  Result<const TableMetadata*> finalize_result =
-      commit_result.has_value()
-          ? Result<const TableMetadata*>(commit_result.value()->metadata().get())
-          : std::unexpected(commit_result.error());
-
-  for (const auto& update : pending_updates_) {
-    std::ignore = update->Finalize(finalize_result);
+  if (!commit_result) {
+    if (commit_result.error().kind == ErrorKind::kCommitStateUnknown) {
+      state_ = TransactionState::kCommitStateUnknown;
+    } else {
+      state_ = TransactionState::kFailed;
+      CleanupUpdates();
+    }
+    return commit_result;
   }
 
-  ICEBERG_RETURN_UNEXPECTED(commit_result);
-
-  // Mark as committed and update table reference
-  committed_ = true;
   ctx_->table = std::move(commit_result.value());
-
+  state_ = TransactionState::kCommitted;
+  FinalizeUpdates(*ctx_->table->metadata());
   return ctx_->table;
+}
+
+Status Transaction::Abort() {
+  if (state_ == TransactionState::kAborted) {
+    return {};
+  }
+  ICEBERG_CHECK(state_ == TransactionState::kReady ||
+                    state_ == TransactionState::kUpdatePending ||
+                    state_ == TransactionState::kFailed,
+                "Cannot abort a committed or unknown transaction");
+  state_ = TransactionState::kAborted;
+  CleanupUpdates();
+  return {};
+}
+
+void Transaction::CleanupUpdates() noexcept {
+  for (const auto& update : pending_updates_) {
+    internal::LogAndIgnoreFailure("Update staging cleanup",
+                                  [&update] { return update->CleanStaged(); });
+  }
+}
+
+void Transaction::FinalizeUpdates(const TableMetadata& committed) noexcept {
+  for (const auto& update : pending_updates_) {
+    internal::LogAndIgnoreFailure("Update finalization", [&update, &committed] {
+      return update->Finalize(committed);
+    });
+  }
 }
 
 Result<std::shared_ptr<Table>> Transaction::CommitOnce(bool is_first_attempt) {
   std::vector<std::unique_ptr<TableRequirement>> requirements;
-
-  switch (ctx_->kind) {
-    case TransactionKind::kCreate: {
-      ICEBERG_ASSIGN_OR_RAISE(requirements, TableRequirements::ForCreateTable(
-                                                ctx_->metadata_builder->changes()));
-    } break;
-    case TransactionKind::kUpdate: {
-      if (!is_first_attempt) {
-        ICEBERG_RETURN_UNEXPECTED(ctx_->table->Refresh());
+  if (ctx_->kind == TransactionKind::kUpdate) {
+    std::shared_ptr<TableMetadata> metadata_before_refresh;
+    if (!is_first_attempt) {
+      // Keep the builder's base alive while Refresh replaces the table metadata.
+      metadata_before_refresh = ctx_->table->metadata();
+      ICEBERG_RETURN_UNEXPECTED(ctx_->table->Refresh());
+    }
+    const bool metadata_changed =
+        ctx_->metadata_builder->base() != ctx_->table->metadata().get();
+    const bool standalone_retry = !is_first_attempt && !ctx_->transaction.has_value();
+    if (metadata_changed || standalone_retry) {
+      ICEBERG_CHECK(CanRetry(),
+                    "Cannot rebase a transaction containing a non-retryable update");
+      CleanupUpdates();
+      ctx_->metadata_builder =
+          TableMetadataBuilder::BuildFrom(ctx_->table->metadata().get());
+      auto applied = ReplayUpdates();
+      if (!applied) {
+        return ValidationFailed("Transaction replay failed: {}", applied.error().message);
       }
-      if (ctx_->metadata_builder->base() != ctx_->table->metadata().get()) {
-        ctx_->metadata_builder =
-            TableMetadataBuilder::BuildFrom(ctx_->table->metadata().get());
-        for (const auto& update : pending_updates_) {
-          ICEBERG_RETURN_UNEXPECTED(update->Commit());
-        }
-      }
-      ICEBERG_ASSIGN_OR_RAISE(requirements, TableRequirements::ForUpdateTable(
-                                                *ctx_->metadata_builder->base(),
-                                                ctx_->metadata_builder->changes()));
-    } break;
+    }
+    if (ctx_->metadata_builder->changes().empty()) {
+      return ctx_->table;
+    }
+    ICEBERG_ASSIGN_OR_RAISE(requirements, TableRequirements::ForUpdateTable(
+                                              *ctx_->metadata_builder->base(),
+                                              ctx_->metadata_builder->changes()));
+  } else {
+    ICEBERG_ASSIGN_OR_RAISE(requirements, TableRequirements::ForCreateTable(
+                                              ctx_->metadata_builder->changes()));
   }
 
-  return ctx_->table->catalog()->UpdateTable(ctx_->table->name(), requirements,
-                                             ctx_->metadata_builder->changes());
+  // UpdateTable may throw after the catalog has committed the changes.
+  try {
+    return ctx_->table->catalog()->UpdateTable(ctx_->table->name(), requirements,
+                                               ctx_->metadata_builder->changes());
+  } catch (const std::exception& e) {
+    return CommitStateUnknown("Catalog commit threw: {}", e.what());
+  } catch (...) {
+    return CommitStateUnknown("Catalog commit threw an unknown exception");
+  }
 }
 
 bool Transaction::CanRetry() const {

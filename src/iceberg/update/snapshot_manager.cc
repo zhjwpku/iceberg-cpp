@@ -181,6 +181,10 @@ SnapshotManager& SnapshotManager::SetMaxRefAgeMs(const std::string& name,
 
 Status SnapshotManager::Commit() {
   ICEBERG_RETURN_UNEXPECTED(CheckErrors());
+  const auto state = transaction_->state();
+  ICEBERG_CHECK(
+      state == TransactionState::kReady || state == TransactionState::kUpdatePending,
+      "Transaction is terminal");
   ICEBERG_RETURN_UNEXPECTED(CommitIfRefUpdatesExist());
   if (!is_external_transaction_) {
     ICEBERG_RETURN_UNEXPECTED(transaction_->Commit());

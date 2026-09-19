@@ -77,7 +77,6 @@ class ICEBERG_EXPORT UpdateProperties : public PendingUpdate {
 
   std::unordered_map<std::string, std::string> updates_;
   std::unordered_set<std::string> removals_;
-  std::optional<int8_t> format_version_;
 };
 
 }  // namespace iceberg

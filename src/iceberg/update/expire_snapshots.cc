@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "iceberg/file_io.h"
+#include "iceberg/logging/log_macros.h"
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/manifest/manifest_reader.h"
 #include "iceberg/result.h"
@@ -115,7 +116,9 @@ class FileCleanupStrategy {
       group.Submit([this, paths = std::move(path_list)]() -> Status {
         return file_io_->DeleteFiles(paths);
       });
-      std::ignore = std::move(group).Run();
+      if (auto status = std::move(group).Run(); !status) {
+        ICEBERG_LOG_WARN("Expiration deletion failed: {}", status.error().message);
+      }
       return;
     }
 
@@ -133,7 +136,9 @@ class FileCleanupStrategy {
         }
       });
     }
-    std::ignore = std::move(group).Run();
+    if (auto status = std::move(group).Run(); !status) {
+      ICEBERG_LOG_WARN("Expiration deletion failed: {}", status.error().message);
+    }
   }
 
   bool HasAnyStatisticsFiles(const TableMetadata& metadata) const {
@@ -999,39 +1004,31 @@ Result<ExpireSnapshots::ApplyResult> ExpireSnapshots::Apply() {
         std::ranges::to<std::unordered_set<int32_t>>();
   }
 
-  // Cache the result for use during Finalize()
   apply_result_ = result;
-
   return result;
 }
 
-Status ExpireSnapshots::Finalize(Result<const TableMetadata*> commit_result) {
-  if (!commit_result.has_value()) {
+Status ExpireSnapshots::Finalize(const TableMetadata& metadata_after_expiration) {
+  // The cached Apply result belongs to this generation only; consume it regardless
+  // of whether any physical cleanup happens.
+  auto apply_result = std::exchange(apply_result_, std::nullopt);
+  if (cleanup_level_ == CleanupLevel::kNone || !apply_result.has_value() ||
+      apply_result->snapshot_ids_to_remove.empty()) {
     return {};
   }
 
-  if (cleanup_level_ == CleanupLevel::kNone) {
-    return {};
-  }
-
-  if (!apply_result_.has_value() || apply_result_->snapshot_ids_to_remove.empty()) {
-    return {};
-  }
-
-  ICEBERG_PRECHECK(apply_result_->metadata_before_expiration != nullptr,
+  ICEBERG_PRECHECK(apply_result->metadata_before_expiration != nullptr,
                    "Missing pre-expiration table metadata for cleanup");
-  ICEBERG_PRECHECK(commit_result.value() != nullptr,
-                   "Missing committed table metadata for cleanup");
-  auto metadata_before_expiration_ptr = apply_result_->metadata_before_expiration;
-  const TableMetadata& metadata_before_expiration = *metadata_before_expiration_ptr;
-  const TableMetadata& metadata_after_expiration = *commit_result.value();
-  apply_result_.reset();
+  const TableMetadata& metadata_before_expiration =
+      *apply_result->metadata_before_expiration;
 
   // Pick incremental cleanup when the expiration is a simple linear-ancestry walk:
   // no explicit snapshot IDs, no removed snapshots outside main ancestry, and no
   // retained snapshots outside main ancestry.
+  // An explicit transaction may apply later updates that add file references.
+  // Reachable cleanup evaluates the final committed metadata and preserves those files.
   const bool can_use_incremental =
-      !specified_snapshot_id_ &&
+      !ctx_->transaction.has_value() && !specified_snapshot_id_ &&
       !HasRemovedNonMainAncestors(metadata_before_expiration,
                                   metadata_after_expiration) &&
       !HasNonMainSnapshots(metadata_after_expiration);

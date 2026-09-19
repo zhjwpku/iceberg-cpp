@@ -25,6 +25,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -156,20 +157,14 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
     return self;
   }
 
-  /// \brief Apply the update's changes to create a new snapshot.
-  ///
-  /// This method validates the changes, applies them to the current base
-  /// metadata, and creates a new snapshot without committing it. Commit retries
-  /// call Apply() again with refreshed metadata so the same changes can be
-  /// applied to the new latest snapshot.
-  ///
-  /// \return A result containing the new snapshot, or an error.
-  Result<ApplyResult> Apply();
-
-  /// \brief Finalize the snapshot update, cleaning up any uncommitted files.
-  Status Finalize(Result<const TableMetadata*> commit_result) override;
-
  protected:
+  friend class Transaction;
+
+  /// Build snapshot state for the transaction's current metadata.
+  Result<ApplyResult> Apply();
+  Status Finalize(const TableMetadata& committed) override;
+  Status CleanStaged() override;
+
   struct ContentFileWithSequenceNumber {
     std::shared_ptr<DataFile> file;
     std::optional<int64_t> data_sequence_number;
@@ -249,19 +244,14 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
   /// retry-safe summary rebuilds.
   virtual void SetSummaryProperty(const std::string& property, const std::string& value);
 
-  /// \brief Check if cleanup should happen after commit
-  ///
-  /// \return True if cleanup should happen after commit
-  virtual bool CleanupAfterCommit() const { return true; }
-
   /// \brief Get or generate the snapshot ID for the new snapshot.
   int64_t SnapshotId();
 
-  /// \brief Delete a file at the given path.
-  ///
-  /// \param path The path of the file to delete
-  /// \return A status indicating the result of the deletion
-  Status DeleteFile(const std::string& path);
+  /// Best-effort delete. Failed paths remain registered for later cleanup.
+  Status DeleteFile(const std::string& path) noexcept;
+  void RegisterStagedFile(const std::string& path);
+  /// Transfer cleanup ownership to the derived update.
+  void UnregisterStagedFile(const std::string& path);
 
   std::string ManifestPath();
   std::string ManifestListPath();
@@ -274,11 +264,7 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
   Result<std::unordered_map<std::string, std::string>> ComputeSummary(
       const TableMetadata& previous);
 
-  /// \brief Clean up all uncommitted files
-  Status CleanAll();
-
-  /// \brief Report metrics for the most recently staged snapshot.
-  void ReportCommit() const;
+  Status ReportCommit() const;
 
  protected:
   SnapshotSummaryBuilder summary_;
@@ -290,7 +276,9 @@ class ICEBERG_EXPORT SnapshotUpdate : public PendingUpdate {
   int32_t write_manifest_parallelism_{1};
   std::atomic<int32_t> manifest_count_{0};
   std::atomic<int32_t> attempt_{0};
-  std::vector<std::string> manifest_lists_;
+  // All paths are registered before writes, including partial/failed writes.
+  std::mutex staging_mutex_;
+  std::unordered_set<std::string> staged_files_;
   const int64_t target_manifest_size_bytes_;
   std::optional<int64_t> snapshot_id_;
   OptionalExecutor plan_executor_;

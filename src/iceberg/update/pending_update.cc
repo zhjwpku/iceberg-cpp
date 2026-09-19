@@ -31,34 +31,29 @@ PendingUpdate::PendingUpdate(std::shared_ptr<TransactionContext> ctx)
 
 PendingUpdate::~PendingUpdate() = default;
 
-Status PendingUpdate::Commit() {
-  if (!ctx_->transaction) {
-    // Table-created path: no transaction exists yet, create a temporary one.
-    ICEBERG_ASSIGN_OR_RAISE(auto txn, Transaction::Make(ctx_));
-    auto apply_status = txn->Apply(*this);
-    if (!apply_status.has_value()) {
-      std::ignore = Finalize(std::unexpected(apply_status.error()));
-      return apply_status;
-    }
-
-    auto commit_result = txn->Commit();
-    if (!commit_result.has_value()) {
-      std::ignore = Finalize(std::unexpected(commit_result.error()));
-      return std::unexpected(commit_result.error());
-    }
-
-    std::ignore = Finalize(commit_result.value()->metadata().get());
-    return {};
-  }
-  auto txn = ctx_->transaction->lock();
-  if (!txn) {
-    return CommitFailed("Transaction has been destroyed");
-  }
-  return txn->Apply(*this);
+Status PendingUpdate::CheckCommitAllowed() const {
+  ICEBERG_CHECK(!commit_called_, "Update has already been committed");
+  return {};
 }
 
-Status PendingUpdate::Finalize(
-    [[maybe_unused]] Result<const TableMetadata*> commit_result) {
+Status PendingUpdate::Commit() {
+  ICEBERG_RETURN_UNEXPECTED(CheckCommitAllowed());
+  if (ctx_->transaction) {
+    auto txn = ctx_->transaction->lock();
+    ICEBERG_CHECK(txn != nullptr, "Transaction has been destroyed");
+    return txn->CommitUpdate(*this);
+  }
+
+  auto self = weak_from_this().lock();
+  ICEBERG_PRECHECK(self != nullptr, "PendingUpdate must be owned by std::shared_ptr");
+  ICEBERG_ASSIGN_OR_RAISE(auto txn, Transaction::Make(ctx_));
+  ICEBERG_RETURN_UNEXPECTED(txn->AddUpdate(self));
+  ICEBERG_RETURN_UNEXPECTED(txn->CommitUpdate(*this));
+  ICEBERG_RETURN_UNEXPECTED(txn->Commit());
+  return {};
+}
+
+Status PendingUpdate::Finalize([[maybe_unused]] const TableMetadata& committed) {
   return {};
 }
 
