@@ -19,10 +19,13 @@
 #include "iceberg/transaction.h"
 
 #include <format>
+#include <iterator>
 #include <memory>
+#include <string>
 
 #include "iceberg/catalog.h"
 #include "iceberg/location_provider.h"
+#include "iceberg/logging/log_macros.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/statistics_file.h"
@@ -59,6 +62,42 @@
 #include "iceberg/util/retry_util.h"
 
 namespace iceberg {
+
+namespace {
+
+std::string FormatCommittedSnapshots(
+    const std::vector<std::unique_ptr<TableUpdate>>& changes) {
+  size_t snapshot_count = 0;
+  for (const auto& change : changes) {
+    snapshot_count += change->kind() == TableUpdate::Kind::kAddSnapshot;
+  }
+  if (snapshot_count == 0) {
+    return {};
+  }
+
+  std::string detail;
+  detail.reserve(32 + snapshot_count * 48);
+  std::format_to(std::back_inserter(detail), ": committed snapshot{} ",
+                 snapshot_count == 1 ? "" : "s");
+
+  size_t formatted_count = 0;
+  for (const auto& change : changes) {
+    if (change->kind() != TableUpdate::Kind::kAddSnapshot) {
+      continue;
+    }
+    const auto& snapshot =
+        internal::checked_cast<const table::AddSnapshot&>(*change).snapshot();
+    if (formatted_count++ > 0) {
+      detail += ", ";
+    }
+    const auto operation = snapshot->summary.find(SnapshotSummaryFields::kOperation);
+    std::format_to(std::back_inserter(detail), "{} (op={})", snapshot->snapshot_id,
+                   operation != snapshot->summary.end() ? operation->second : "unknown");
+  }
+  return detail;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // TransactionContext
@@ -398,6 +437,8 @@ Status Transaction::ApplyUpdatePartitionStatistics(UpdatePartitionStatistics& up
 Result<std::shared_ptr<Table>> Transaction::Commit() {
   ICEBERG_RETURN_UNEXPECTED(CheckReady());
   Result<std::shared_ptr<Table>> commit_result = ctx_->table;
+  int32_t attempt = 0;
+  std::string last_error;
   try {
     auto builder_status = ctx_->metadata_builder->CheckErrors();
     if (!builder_status) {
@@ -413,11 +454,23 @@ Result<std::shared_ptr<Table>> Transaction::Commit() {
                                 props.Get(TableProperties::kCommitMinRetryWaitMs),
                                 props.Get(TableProperties::kCommitMaxRetryWaitMs),
                                 props.Get(TableProperties::kCommitTotalRetryTimeMs))
-              .Run([this, &is_first_attempt]() -> Result<std::shared_ptr<Table>> {
-                auto result = CommitOnce(is_first_attempt);
-                is_first_attempt = false;
-                return result;
-              });
+              .Run(
+                  [this, &is_first_attempt, &attempt,
+                   &last_error]() -> Result<std::shared_ptr<Table>> {
+                    if (attempt > 1) {
+                      ICEBERG_LOG_WARN(
+                          "Retrying transaction commit for table {} (attempt {}) after: "
+                          "{}",
+                          ctx_->table->name().ToString(), attempt, last_error);
+                    }
+                    auto result = CommitOnce(is_first_attempt);
+                    is_first_attempt = false;
+                    if (!result) {
+                      last_error = result.error().message;
+                    }
+                    return result;
+                  },
+                  &attempt);
     }
   } catch (const std::exception& e) {
     // CommitOnce handles catalog exceptions, so this failed before the commit.
@@ -425,6 +478,18 @@ Result<std::shared_ptr<Table>> Transaction::Commit() {
   } catch (...) {
     commit_result =
         ValidationFailed("Transaction preparation threw an unknown exception");
+  }
+
+  if (commit_result && !ctx_->metadata_builder->changes().empty()) {
+    if (attempt > 1) {
+      ICEBERG_LOG_INFO("Transaction commit for table {} succeeded after {} attempts{}",
+                       ctx_->table->name().ToString(), attempt,
+                       FormatCommittedSnapshots(ctx_->metadata_builder->changes()));
+    } else {
+      ICEBERG_LOG_INFO("Transaction commit for table {} succeeded{}",
+                       ctx_->table->name().ToString(),
+                       FormatCommittedSnapshots(ctx_->metadata_builder->changes()));
+    }
   }
 
   if (!commit_result) {
