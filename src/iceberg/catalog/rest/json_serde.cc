@@ -108,6 +108,8 @@ constexpr std::string_view kPlanTask = "plan-task";
 constexpr std::string_view kDataFile = "data-file";
 constexpr std::string_view kDeleteFileReferences = "delete-file-references";
 constexpr std::string_view kResidualFilter = "residual-filter";
+constexpr std::string_view kStart = "start";
+constexpr std::string_view kLength = "length";
 
 Result<nlohmann::json> StorageCredentialToJson(const StorageCredential& credential) {
   ICEBERG_RETURN_UNEXPECTED(credential.Validate());
@@ -168,6 +170,12 @@ Result<std::vector<std::shared_ptr<FileScanTask>>> FileScanTasksFromJson(
     ICEBERG_ASSIGN_OR_RAISE(
         auto data_file,
         iceberg::DataFileFromJson(data_file_json, partition_spec_by_id, schema));
+    ICEBERG_ASSIGN_OR_RAISE(auto start, GetJsonIntegerOrDefault(task_json, kStart, 0));
+    ICEBERG_ASSIGN_OR_RAISE(
+        auto length,
+        GetJsonIntegerOrDefault(task_json, kLength, data_file.file_size_in_bytes));
+    ICEBERG_RETURN_UNEXPECTED(
+        CheckFileScanTaskNotSplit(start, length, data_file.file_size_in_bytes));
     // FIXME: REST scan-task DataFile JSON currently carries first-row-id,
     // but not the manifest-entry data sequence number. Until the REST API exposes
     // it, REST-planned tasks cannot inherit _last_updated_sequence_number.
