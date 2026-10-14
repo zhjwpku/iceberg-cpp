@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "iceberg/catalog/rest/rest_table_scan.h"
+#include "iceberg/labels.h"
 #include "iceberg/result.h"
 #include "iceberg/table_metadata.h"
 #include "iceberg/util/macros.h"
@@ -33,9 +34,10 @@ RestTable::RestTable(TableIdentifier identifier, std::shared_ptr<TableMetadata> 
                      std::string metadata_location, std::shared_ptr<FileIO> io,
                      std::shared_ptr<Catalog> catalog, std::string full_name,
                      std::shared_ptr<MetricsReporter> reporter,
-                     RestScanContext rest_context)
+                     RestScanContext rest_context, std::unique_ptr<Labels> labels)
     : Table(std::move(identifier), std::move(metadata), std::move(metadata_location),
-            std::move(io), std::move(catalog), std::move(full_name), std::move(reporter)),
+            std::move(io), std::move(catalog), std::move(full_name), std::move(reporter),
+            std::move(labels)),
       rest_context_(std::make_shared<const RestScanContext>(std::move(rest_context))) {}
 
 RestTable::~RestTable() = default;
@@ -44,14 +46,15 @@ Result<std::shared_ptr<RestTable>> RestTable::Make(
     TableIdentifier identifier, std::shared_ptr<TableMetadata> metadata,
     std::string metadata_location, std::shared_ptr<FileIO> io,
     std::shared_ptr<Catalog> catalog, std::string full_name,
-    std::shared_ptr<MetricsReporter> reporter, RestScanContext rest_context) {
+    std::shared_ptr<MetricsReporter> reporter, RestScanContext rest_context,
+    std::unique_ptr<Labels> labels) {
   if (metadata == nullptr) {
     return InvalidArgument("Metadata cannot be null");
   }
-  return std::shared_ptr<RestTable>(
-      new RestTable(std::move(identifier), std::move(metadata),
-                    std::move(metadata_location), std::move(io), std::move(catalog),
-                    std::move(full_name), std::move(reporter), std::move(rest_context)));
+  return std::shared_ptr<RestTable>(new RestTable(
+      std::move(identifier), std::move(metadata), std::move(metadata_location),
+      std::move(io), std::move(catalog), std::move(full_name), std::move(reporter),
+      std::move(rest_context), std::move(labels)));
 }
 
 Result<std::unique_ptr<DataTableScanBuilder>> RestTable::NewScan() const {
