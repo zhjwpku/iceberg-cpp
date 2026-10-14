@@ -39,31 +39,6 @@ constexpr const char* kArrowExtensionName = "ARROW:extension:name";
 constexpr const char* kArrowExtensionMetadata = "ARROW:extension:metadata";
 constexpr int32_t kUnknownFieldId = -1;
 
-Status CheckArrowCompatible(const Type& type) {
-  switch (type.type_id()) {
-    case TypeId::kVariant:
-      return NotSupported("Iceberg type {} is not supported by Arrow conversion",
-                          type.ToString());
-    case TypeId::kStruct:
-      for (const auto& field : static_cast<const StructType&>(type).fields()) {
-        ICEBERG_RETURN_UNEXPECTED(CheckArrowCompatible(*field.type()));
-      }
-      break;
-    case TypeId::kList:
-      ICEBERG_RETURN_UNEXPECTED(
-          CheckArrowCompatible(*static_cast<const ListType&>(type).element().type()));
-      break;
-    case TypeId::kMap: {
-      const auto& map_type = static_cast<const MapType&>(type);
-      ICEBERG_RETURN_UNEXPECTED(CheckArrowCompatible(*map_type.key().type()));
-      ICEBERG_RETURN_UNEXPECTED(CheckArrowCompatible(*map_type.value().type()));
-    } break;
-    default:
-      break;
-  }
-  return {};
-}
-
 // Convert an Iceberg type to Arrow schema. Return value is Nanoarrow error code.
 ArrowErrorCode ToArrowSchema(const Type& type, bool optional, std::string_view name,
                              std::optional<int32_t> field_id, ArrowSchema* schema) {
@@ -182,8 +157,15 @@ ArrowErrorCode ToArrowSchema(const Type& type, bool optional, std::string_view n
       NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema, NANOARROW_TYPE_NA));
       break;
     case TypeId::kVariant:
-      ArrowBufferReset(&metadata_buffer);
-      return EINVAL;
+      NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeStruct(schema, 2));
+      NANOARROW_RETURN_NOT_OK(
+          ToArrowSchema(*binary(), false, "metadata", std::nullopt, schema->children[0]));
+      NANOARROW_RETURN_NOT_OK(
+          ToArrowSchema(*binary(), false, "value", std::nullopt, schema->children[1]));
+      NANOARROW_RETURN_NOT_OK(
+          ArrowMetadataBuilderAppend(&metadata_buffer, ArrowCharView(kArrowExtensionName),
+                                     ArrowCharView(kArrowVariantExtensionName)));
+      break;
   }
 
   if (!name.empty()) {
@@ -208,8 +190,6 @@ Status ToArrowSchema(const Schema& schema, ArrowSchema* out) {
   if (out == nullptr) [[unlikely]] {
     return InvalidArgument("Output Arrow schema cannot be null");
   }
-
-  ICEBERG_RETURN_UNEXPECTED(CheckArrowCompatible(schema));
 
   ArrowSchemaInit(out);
   internal::ArrowSchemaGuard schema_guard(out);
@@ -271,6 +251,59 @@ Result<std::shared_ptr<Type>> FromArrowSchema(const ArrowSchema& schema) {
       error_code != NANOARROW_OK) {
     return InvalidSchema("Failed to read Arrow schema, code: {}, message: {}", error_code,
                          arrow_error.message);
+  }
+
+  const std::string_view extension_name(
+      schema_view.extension_name.data == nullptr ? "" : schema_view.extension_name.data,
+      schema_view.extension_name.size_bytes);
+  if (extension_name == kArrowVariantExtensionName) {
+    if (schema_view.extension_metadata.size_bytes != 0) {
+      return InvalidSchema("Variant extension metadata must be empty");
+    }
+    if (schema_view.storage_type != NANOARROW_TYPE_STRUCT || schema.n_children < 2 ||
+        schema.n_children > 3) {
+      return InvalidSchema(
+          "Variant extension requires struct storage with metadata and value or "
+          "typed_value");
+    }
+    bool has_metadata = false;
+    bool has_value = false;
+    bool has_typed_value = false;
+    bool value_nullable = true;
+    for (int64_t i = 0; i < schema.n_children; ++i) {
+      const auto& child = *schema.children[i];
+      std::string_view name = child.name == nullptr ? "" : child.name;
+      if (name == "typed_value" && !has_typed_value) {
+        has_typed_value = true;
+        continue;
+      }
+      ArrowSchemaView child_view;
+      if (ArrowSchemaViewInit(&child_view, &child, &arrow_error) != NANOARROW_OK ||
+          (child_view.type != NANOARROW_TYPE_BINARY &&
+           child_view.type != NANOARROW_TYPE_LARGE_BINARY &&
+           child_view.type != NANOARROW_TYPE_BINARY_VIEW)) {
+        return InvalidSchema("Variant storage field '{}' must be binary", name);
+      }
+      if (name == "metadata" && !has_metadata) {
+        if ((child.flags & ARROW_FLAG_NULLABLE) != 0) {
+          return InvalidSchema("Variant metadata must be required");
+        }
+        has_metadata = true;
+      } else if (name == "value" && !has_value) {
+        has_value = true;
+        value_nullable = (child.flags & ARROW_FLAG_NULLABLE) != 0;
+      } else {
+        return InvalidSchema("Unexpected or duplicate variant storage field '{}'", name);
+      }
+    }
+    if (!has_metadata || (!has_value && !has_typed_value)) {
+      return InvalidSchema("Variant storage requires metadata and value or typed_value");
+    }
+    if (has_typed_value != value_nullable) {
+      return InvalidSchema(
+          "Variant value must be required when unshredded and optional when shredded");
+    }
+    return variant();
   }
 
   switch (schema_view.type) {

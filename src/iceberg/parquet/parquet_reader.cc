@@ -32,15 +32,18 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/schema.h>
+#include <parquet/exception.h>
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
 
 #include "iceberg/arrow/arrow_io_internal.h"
+#include "iceberg/arrow/arrow_register.h"
 #include "iceberg/arrow/arrow_status_internal.h"
 #include "iceberg/arrow/metadata_column_util_internal.h"
 #include "iceberg/parquet/parquet_data_util_internal.h"
 #include "iceberg/parquet/parquet_register.h"
 #include "iceberg/parquet/parquet_schema_util_internal.h"
+#include "iceberg/parquet/parquet_variant_util_internal.h"
 #include "iceberg/result.h"
 #include "iceberg/schema_internal.h"
 #include "iceberg/schema_util.h"
@@ -279,9 +282,11 @@ class ParquetReader::Impl {
  public:
   // Open the Parquet reader with the given options
   Status Open(const ReaderOptions& options) {
+    arrow::RegisterAll();
     if (options.projection == nullptr) {
       return InvalidArgument("Projected schema is required by Parquet reader");
     }
+    ICEBERG_RETURN_UNEXPECTED(CheckVariantSupport(*options.projection));
 
     split_ = options.split;
     read_schema_ = options.projection;
@@ -466,9 +471,16 @@ class ParquetReader::Impl {
   std::unique_ptr<ReadContext> context_;
 };
 
+ParquetReader::ParquetReader() = default;
 ParquetReader::~ParquetReader() = default;
 
-Result<std::optional<ArrowArray>> ParquetReader::Next() { return impl_->Next(); }
+Result<std::optional<ArrowArray>> ParquetReader::Next() {
+  try {
+    return impl_->Next();
+  } catch (const ::parquet::ParquetException& error) {
+    return Invalid("Cannot read Parquet batch: {}", error.what());
+  }
+}
 
 Result<ArrowSchema> ParquetReader::Schema() { return impl_->Schema(); }
 
@@ -478,7 +490,11 @@ Result<std::unordered_map<std::string, std::string>> ParquetReader::Metadata() {
 
 Status ParquetReader::Open(const ReaderOptions& options) {
   impl_ = std::make_unique<Impl>();
-  return impl_->Open(options);
+  try {
+    return impl_->Open(options);
+  } catch (const ::parquet::ParquetException& error) {
+    return InvalidSchema("Cannot open Parquet reader: {}", error.what());
+  }
 }
 
 Status ParquetReader::Close() { return impl_->Close(); }

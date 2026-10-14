@@ -51,6 +51,10 @@ option(ICEBERG_BUILD_SHARED "Build shared library" OFF)
 option(ICEBERG_BUILD_TESTS "Build tests" ON)
 option(ICEBERG_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(ICEBERG_BUILD_BUNDLE "Build the battery included library" ON)
+option(ICEBERG_USE_BUNDLED_ARROW
+       "Use the pinned Arrow source instead of an installed Arrow" OFF)
+option(ICEBERG_REQUIRE_ARROW_VARIANT
+       "Require Arrow variant APIs when building the bundle" ON)
 option(ICEBERG_BUILD_REST "Build rest catalog client" ON)
 option(ICEBERG_BUILD_REST_INTEGRATION_TESTS "Build rest catalog integration tests" OFF)
 option(ICEBERG_BUILD_HIVE "Build hive (HMS) catalog client" OFF)

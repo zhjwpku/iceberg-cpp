@@ -220,7 +220,11 @@ if(ICEBERG_BUILD_BUNDLE)
                    parquet_data_test.cc
                    parquet_metrics_test.cc
                    parquet_schema_test.cc
+                   parquet_variant_test.cc
                    parquet_test.cc)
+  target_compile_definitions(parquet_test
+                             PRIVATE ICEBERG_REQUIRE_ARROW_VARIANT=$<BOOL:${ICEBERG_REQUIRE_ARROW_VARIANT}>
+  )
 
   add_iceberg_test(scan_test
                    USE_BUNDLE
