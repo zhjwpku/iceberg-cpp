@@ -128,8 +128,7 @@ Result<StorageCredential> StorageCredentialFromJson(const nlohmann::json& json) 
   return credential;
 }
 
-/// \brief Reads the optional `storage-credentials` array shared by the
-/// LoadTable and LoadCredentials responses.
+/// \brief Reads the optional `storage-credentials` array.
 Result<std::vector<StorageCredential>> StorageCredentialsFromJson(
     const nlohmann::json& json) {
   std::vector<StorageCredential> credentials;
@@ -145,6 +144,21 @@ Result<std::vector<StorageCredential>> StorageCredentialsFromJson(
     credentials.push_back(std::move(credential));
   }
   return credentials;
+}
+
+/// \brief Writes `storage-credentials` to json if any are present.
+Status StorageCredentialsToJson(const std::vector<StorageCredential>& credentials,
+                                nlohmann::json& json) {
+  if (credentials.empty()) {
+    return {};
+  }
+  nlohmann::json creds_json = nlohmann::json::array();
+  for (const auto& cred : credentials) {
+    ICEBERG_ASSIGN_OR_RAISE(auto entry, StorageCredentialToJson(cred));
+    creds_json.push_back(std::move(entry));
+  }
+  json[kStorageCredentials] = std::move(creds_json);
+  return {};
 }
 }  // namespace
 
@@ -829,6 +843,8 @@ Result<nlohmann::json> ToJson(const PlanTableScanRequest& request) {
   if (request.snapshot_id.has_value()) {
     json[kSnapshotId] = request.snapshot_id.value();
   }
+  // FIXME: Preserve explicit empty projections as select: []; omitting select
+  // means the default projection. Java currently has the same issue.
   if (!request.select.empty()) {
     json[kSelect] = request.select;
   }
@@ -884,6 +900,7 @@ Result<PlanTableScanResponse> PlanTableScanResponseFromJson(
   }
   ICEBERG_RETURN_UNEXPECTED(
       ScanTaskFieldsFromJson(json, response, partition_specs_by_id, schema));
+  ICEBERG_ASSIGN_OR_RAISE(response.storage_credentials, StorageCredentialsFromJson(json));
   ICEBERG_RETURN_UNEXPECTED(response.Validate());
   return response;
 }
@@ -895,6 +912,7 @@ Result<nlohmann::json> ToJson(
     const Schema& schema) {
   ICEBERG_ASSIGN_OR_RAISE(nlohmann::json json,
                           ScanTaskFieldsToJson(response, partition_specs_by_id, schema));
+  ICEBERG_RETURN_UNEXPECTED(StorageCredentialsToJson(response.storage_credentials, json));
   json[kPlanStatus] = ToString(response.plan_status);
   if (!response.plan_id.empty()) {
     json[kPlanId] = response.plan_id;
@@ -921,6 +939,7 @@ Result<FetchPlanningResultResponse> FetchPlanningResultResponseFromJson(
   }
   ICEBERG_RETURN_UNEXPECTED(
       ScanTaskFieldsFromJson(json, response, partition_specs_by_id, schema));
+  ICEBERG_ASSIGN_OR_RAISE(response.storage_credentials, StorageCredentialsFromJson(json));
   ICEBERG_RETURN_UNEXPECTED(response.Validate());
   return response;
 }
@@ -932,6 +951,7 @@ Result<nlohmann::json> ToJson(
     const Schema& schema) {
   ICEBERG_ASSIGN_OR_RAISE(nlohmann::json json,
                           ScanTaskFieldsToJson(response, partition_specs_by_id, schema));
+  ICEBERG_RETURN_UNEXPECTED(StorageCredentialsToJson(response.storage_credentials, json));
   json[kPlanStatus] = ToString(response.plan_status);
   if (response.error.has_value()) {
     json[kError] = ToJson(*response.error)[kError];
