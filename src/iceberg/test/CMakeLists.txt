@@ -220,7 +220,8 @@ if(ICEBERG_BUILD_BUNDLE)
                    parquet_data_test.cc
                    parquet_metrics_test.cc
                    parquet_schema_test.cc
-                   parquet_test.cc)
+                   parquet_test.cc
+                   row_number_reader_test.cc)
   if(ICEBERG_ENCRYPTION)
     target_sources(parquet_test PRIVATE parquet_encryption_test.cc)
   endif()
