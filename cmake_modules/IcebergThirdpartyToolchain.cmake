@@ -233,20 +233,18 @@ function(resolve_arrow_dependency)
         "https://archive.apache.org/dist/thrift/0.22.0/thrift-0.22.0.tar.gz")
   endif()
 
-  fetchcontent_declare(VendoredArrow
+  fetchcontent_declare(Arrow
                        ${FC_DECLARE_COMMON_OPTIONS}
                        URL ${ARROW_SOURCE_URL}
                        URL_HASH "SHA256=${ICEBERG_ARROW_BUILD_SHA256_CHECKSUM}"
                        SOURCE_SUBDIR
                        cpp
                        FIND_PACKAGE_ARGS
-                       NAMES
-                       Arrow
                        CONFIG)
 
-  fetchcontent_makeavailable(VendoredArrow)
+  fetchcontent_makeavailable(Arrow)
 
-  if(vendoredarrow_SOURCE_DIR)
+  if(arrow_SOURCE_DIR)
     # Arrow's Parquet targets do not inherit the OpenSSL include directory when
     # Arrow is vendored; add it for the Parquet encryption sources. Depending on the
     # platform and build type, they are compiled in the object library or directly in
@@ -270,16 +268,16 @@ function(resolve_arrow_dependency)
       add_library(Arrow::arrow_static INTERFACE IMPORTED)
       target_link_libraries(Arrow::arrow_static INTERFACE arrow_static)
       target_include_directories(Arrow::arrow_static
-                                 INTERFACE ${vendoredarrow_BINARY_DIR}/src
-                                           ${vendoredarrow_SOURCE_DIR}/cpp/src)
+                                 INTERFACE ${arrow_BINARY_DIR}/src
+                                           ${arrow_SOURCE_DIR}/cpp/src)
     endif()
 
     if(NOT TARGET Parquet::parquet_static)
       add_library(Parquet::parquet_static INTERFACE IMPORTED)
       target_link_libraries(Parquet::parquet_static INTERFACE parquet_static)
       target_include_directories(Parquet::parquet_static
-                                 INTERFACE ${vendoredarrow_BINARY_DIR}/src
-                                           ${vendoredarrow_SOURCE_DIR}/cpp/src)
+                                 INTERFACE ${arrow_BINARY_DIR}/src
+                                           ${arrow_SOURCE_DIR}/cpp/src)
     endif()
 
     set(ARROW_VENDORED TRUE)
