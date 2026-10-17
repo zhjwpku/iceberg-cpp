@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -71,7 +72,10 @@ class ICEBERG_REST_EXPORT HttpResponse {
 /// \brief HTTP client for making requests to Iceberg REST Catalog API.
 class ICEBERG_REST_EXPORT HttpClient {
  public:
-  explicit HttpClient(std::unordered_map<std::string, std::string> default_headers = {});
+  /// \param connection_timeout,socket_timeout Zero leaves requests unbounded.
+  explicit HttpClient(std::unordered_map<std::string, std::string> default_headers = {},
+                      std::chrono::milliseconds connection_timeout = {},
+                      std::chrono::milliseconds socket_timeout = {});
   virtual ~HttpClient();
 
   HttpClient(const HttpClient&) = delete;
@@ -112,6 +116,8 @@ class ICEBERG_REST_EXPORT HttpClient {
 
  private:
   std::unordered_map<std::string, std::string> default_headers_;
+  std::chrono::milliseconds connection_timeout_;
+  std::chrono::milliseconds socket_timeout_;
   std::unique_ptr<cpr::ConnectionPool> connection_pool_;
 };
 

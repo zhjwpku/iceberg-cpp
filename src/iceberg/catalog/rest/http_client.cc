@@ -146,9 +146,27 @@ ErrorResponse BuildDefaultErrorResponse(const cpr::Response& response) {
   };
 }
 
+/// \brief Fails a response whose transfer failed, even after a success status.
+Status CheckTransfer(const cpr::Response& response) {
+  if (response.error.code == cpr::ErrorCode::OPERATION_TIMEDOUT) {
+    return IOError("HTTP request timed out: {}", response.error.message);
+  }
+  if (response.error) {
+    if (IsSuccessful(response.status_code)) {
+      return IOError("HTTP request failed after status {}: {}", response.status_code,
+                     response.error.message);
+    }
+    return IOError("HTTP request failed: {}", response.error.message);
+  }
+  return {};
+}
+
 /// \brief Handles failure responses by invoking the provided error handler.
+///
+/// A failed transfer is checked first, as its status code may be 0 or a success.
 Status HandleFailureResponse(const cpr::Response& response,
                              const ErrorHandler& error_handler) {
+  ICEBERG_RETURN_UNEXPECTED(CheckTransfer(response));
   if (IsSuccessful(response.status_code)) {
     return {};
   }
@@ -161,8 +179,12 @@ Status HandleFailureResponse(const cpr::Response& response,
 
 }  // namespace
 
-HttpClient::HttpClient(std::unordered_map<std::string, std::string> default_headers)
+HttpClient::HttpClient(std::unordered_map<std::string, std::string> default_headers,
+                       std::chrono::milliseconds connection_timeout,
+                       std::chrono::milliseconds socket_timeout)
     : default_headers_{std::move(default_headers)},
+      connection_timeout_{connection_timeout},
+      socket_timeout_{socket_timeout},
       connection_pool_{std::make_unique<cpr::ConnectionPool>()} {
   // Set default Content-Type for all requests (including GET/HEAD/DELETE).
   // Many systems require that content type is set regardless and will fail,
@@ -181,8 +203,9 @@ Result<HttpResponse> HttpClient::Get(
   ICEBERG_ASSIGN_OR_RAISE(auto authenticated,
                           AuthenticateRequest(session, HttpMethod::kGet, std::move(url),
                                               MergeHeaders(default_headers_, headers)));
-  cpr::Response response = cpr::Get(cpr::Url{authenticated.url},
-                                    ToCprHeader(authenticated), *connection_pool_);
+  cpr::Response response =
+      cpr::Get(cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
+               cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
@@ -200,7 +223,8 @@ Result<HttpResponse> HttpClient::Post(
                           MergeHeaders(default_headers_, headers), body));
   cpr::Response response =
       cpr::Post(cpr::Url{authenticated.url}, cpr::Body{authenticated.body},
-                ToCprHeader(authenticated), *connection_pool_);
+                ToCprHeader(authenticated), *connection_pool_,
+                cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
@@ -230,7 +254,8 @@ Result<HttpResponse> HttpClient::PostForm(
                           std::move(encoded_body)));
   cpr::Response response =
       cpr::Post(cpr::Url{authenticated.url}, cpr::Body{authenticated.body},
-                ToCprHeader(authenticated), *connection_pool_);
+                ToCprHeader(authenticated), *connection_pool_,
+                cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
@@ -244,8 +269,9 @@ Result<HttpResponse> HttpClient::Head(
   ICEBERG_ASSIGN_OR_RAISE(auto authenticated,
                           AuthenticateRequest(session, HttpMethod::kHead, path,
                                               MergeHeaders(default_headers_, headers)));
-  cpr::Response response = cpr::Head(cpr::Url{authenticated.url},
-                                     ToCprHeader(authenticated), *connection_pool_);
+  cpr::Response response = cpr::Head(
+      cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
+      cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
@@ -262,8 +288,9 @@ Result<HttpResponse> HttpClient::Delete(
       auto authenticated,
       AuthenticateRequest(session, HttpMethod::kDelete, std::move(url),
                           MergeHeaders(default_headers_, headers)));
-  cpr::Response response = cpr::Delete(cpr::Url{authenticated.url},
-                                       ToCprHeader(authenticated), *connection_pool_);
+  cpr::Response response = cpr::Delete(
+      cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
+      cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;

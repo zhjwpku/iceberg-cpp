@@ -19,6 +19,9 @@
 
 #include "iceberg/catalog/rest/rest_catalog.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -127,6 +130,18 @@ std::string RestTableName(std::string_view catalog_name,
     return identifier.ToString();
   }
   return std::string(catalog_name) + '.' + identifier.ToString();
+}
+
+/// \brief Report a write whose response transfer failed as having an unknown
+/// outcome, since the server may have applied it.
+Result<HttpResponse> UnknownIfTransferFailed(Result<HttpResponse> response,
+                                             std::string_view operation,
+                                             std::string_view state) {
+  if (!response.has_value() && response.error().kind == ErrorKind::kIOError) {
+    return CommitStateUnknown("{} response transfer failed; the {} state is unknown: {}",
+                              operation, state, response.error().message);
+  }
+  return response;
 }
 
 /// \brief Fetch server configuration from the REST catalog server.
@@ -437,7 +452,14 @@ Result<std::shared_ptr<RestCatalog>> RestCatalog::Make(
   if (!client_factory) {
     client_factory = [](const RestCatalogProperties& properties)
         -> Result<std::shared_ptr<HttpClient>> {
-      return std::make_shared<HttpClient>(properties.ExtractHeaders());
+      // A value that is not positive leaves requests unbounded.
+      const auto timeout_of = [&properties](const auto& entry) {
+        return std::chrono::milliseconds(std::max<int64_t>(0, properties.Get(entry)));
+      };
+      return std::make_shared<HttpClient>(
+          properties.ExtractHeaders(),
+          timeout_of(RestCatalogProperties::kClientConnectionTimeoutMs),
+          timeout_of(RestCatalogProperties::kClientSocketTimeoutMs));
     };
   }
   ICEBERG_ASSIGN_OR_RAISE(auto uri, config.Uri());
@@ -777,9 +799,11 @@ Result<LoadTableResult> RestCatalog::CreateTableInternal(
 
   ICEBERG_ASSIGN_OR_RAISE(auto request_json, ToJson(request));
   ICEBERG_ASSIGN_OR_RAISE(auto json_request, ToJsonString(request_json));
-  ICEBERG_ASSIGN_OR_RAISE(const auto response,
-                          client_->Post(path, json_request, /*headers=*/{},
-                                        *TableErrorHandler::Instance(), session));
+  ICEBERG_ASSIGN_OR_RAISE(
+      const auto response,
+      UnknownIfTransferFailed(client_->Post(path, json_request, /*headers=*/{},
+                                            *TableErrorHandler::Instance(), session),
+                              "Create table", "table"));
 
   ICEBERG_ASSIGN_OR_RAISE(auto json, FromJsonString(response.body()));
   ICEBERG_ASSIGN_OR_RAISE(auto load_result, LoadTableResultFromJson(json));
@@ -828,7 +852,9 @@ Result<CommitTableResponse> RestCatalog::UpdateTableInternal(
   }
   ICEBERG_ASSIGN_OR_RAISE(
       const auto response,
-      client_->Post(path, json_request, /*headers=*/{}, *error_handler, session));
+      UnknownIfTransferFailed(
+          client_->Post(path, json_request, /*headers=*/{}, *error_handler, session),
+          "Commit", "commit"));
 
   ICEBERG_ASSIGN_OR_RAISE(auto json, FromJsonString(response.body()));
   ICEBERG_ASSIGN_OR_RAISE(auto commit_response, CommitTableResponseFromJson(json));

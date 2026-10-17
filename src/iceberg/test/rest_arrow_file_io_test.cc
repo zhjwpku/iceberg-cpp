@@ -21,6 +21,7 @@
 /// \brief Covers REST -> ResolvingFileIO -> registry -> Arrow FileIO against the
 /// real registered implementations, which mock delegates cannot exercise.
 
+#include <chrono>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -39,7 +40,9 @@
 #include "iceberg/catalog/rest/rest_file_io.h"
 #include "iceberg/storage_credential.h"
 #include "iceberg/test/matchers.h"
+#include "iceberg/test/mock_io.h"
 #include "iceberg/test/temp_file_test_base.h"
+#include "iceberg/util/timepoint.h"
 
 namespace iceberg::rest {
 
@@ -148,8 +151,8 @@ std::string AsOssUri(std::string_view uri) {
 }
 
 // Resolution, credential matching and real I/O for `oss://`. The credential
-// env vars are scrubbed, so only the vended `s3`-scoped credential matching
-// the canonicalized location can authenticate.
+// env vars are scrubbed, so only the vended `oss`-scoped credential matching
+// the location can authenticate.
 TEST_F(RestArrowFileIOTest, ReadsBackWhatItWroteThroughAnOssLocation) {
   const auto base_uri = GetEnvIfSet("ICEBERG_TEST_S3_URI");
   if (!base_uri.has_value()) {
@@ -176,10 +179,10 @@ TEST_F(RestArrowFileIOTest, ReadsBackWhatItWroteThroughAnOssLocation) {
 
   ScopedScrubbedAwsCredentialEnv scrubbed;
 
-  // Scoped to `s3`, while the data it grants access to is addressed as `oss://`.
-  auto io = MakeTableFileIO({{"warehouse", "logical_warehouse_name"}},
-                            /*table_config=*/{},
-                            {{.prefix = "s3", .config = std::move(credential_config)}});
+  // The scheme is preserved for routing, while the endpoint is S3-compatible.
+  auto io =
+      MakeTableFileIO({{"warehouse", "logical_warehouse_name"}}, /*table_config=*/{},
+                      {{.prefix = "oss://", .config = std::move(credential_config)}});
   ASSERT_THAT(io, IsOk());
 
   auto object_uri = AsOssUri(*base_uri);
@@ -189,6 +192,56 @@ TEST_F(RestArrowFileIOTest, ReadsBackWhatItWroteThroughAnOssLocation) {
   object_uri += "iceberg_oss_scheme_round_trip.txt";
   constexpr std::string_view kContent = "resolved and written through an oss:// location";
 
+  ASSERT_THAT(io.value()->WriteFile(object_uri, kContent), IsOk());
+  EXPECT_THAT(io.value()->ReadFile(object_uri, std::nullopt),
+              HasValue(::testing::Eq(std::string(kContent))));
+  EXPECT_THAT(io.value()->DeleteFile(object_uri), IsOk());
+}
+
+TEST_F(RestArrowFileIOTest, RefreshesCredentialsThroughTheRealS3FileIO) {
+  const auto base_uri = GetEnvIfSet("ICEBERG_TEST_S3_URI");
+  const auto access_key = GetEnvIfSet("AWS_ACCESS_KEY_ID");
+  const auto secret_key = GetEnvIfSet("AWS_SECRET_ACCESS_KEY");
+  if (!base_uri || !access_key || !secret_key) {
+    GTEST_SKIP()
+        << "Set ICEBERG_TEST_S3_URI, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY";
+  }
+
+  std::unordered_map<std::string, std::string> config = {
+      {"s3.access-key-id", *access_key}, {"s3.secret-access-key", *secret_key}};
+  if (const auto token = GetEnvIfSet("AWS_SESSION_TOKEN")) {
+    config["s3.session-token"] = *token;
+    // A refreshed session token must say when it expires.
+    config["s3.session-token-expires-at-ms"] = std::to_string(
+        UnixMsFromTimePointMs(CurrentTimePointMs() + std::chrono::hours(1)));
+  }
+  if (const auto endpoint = GetEnvIfSet("ICEBERG_TEST_S3_ENDPOINT")) {
+    config["s3.endpoint"] = *endpoint;
+  }
+  if (const auto region = GetEnvIfSet("AWS_REGION")) {
+    config["client.region"] = *region;
+  }
+  const std::vector<StorageCredential> refreshed = {{.prefix = "s3", .config = config}};
+  config["s3.access-key-id"] = "bad-access-key";
+  config["s3.secret-access-key"] = "bad-secret-key";
+  config["s3.session-token"] = "expired-token";
+  config["s3.session-token-expires-at-ms"] = "0";
+
+  // Only the provider can supply credentials that authenticate this round trip.
+  ScopedScrubbedAwsCredentialEnv scrubbed;
+  auto provider = std::make_shared<MockStorageCredentialProvider>();
+  EXPECT_CALL(*provider, Load()).WillOnce(::testing::Return(refreshed));
+  auto io = MakeTableFileIO({{"warehouse", "logical_warehouse_name"}},
+                            /*table_config=*/{},
+                            {{.prefix = "s3", .config = std::move(config)}}, provider);
+  ASSERT_THAT(io, IsOk());
+
+  auto object_uri = *base_uri;
+  if (!object_uri.ends_with('/')) {
+    object_uri += '/';
+  }
+  object_uri += "iceberg_refresh_provider.txt";
+  constexpr std::string_view kContent = "written after refreshing vended credentials";
   ASSERT_THAT(io.value()->WriteFile(object_uri, kContent), IsOk());
   EXPECT_THAT(io.value()->ReadFile(object_uri, std::nullopt),
               HasValue(::testing::Eq(std::string(kContent))));
