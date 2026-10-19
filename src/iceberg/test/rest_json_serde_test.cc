@@ -17,6 +17,7 @@
  * under the License.
  */
 
+#include <format>
 #include <limits>
 #include <memory>
 #include <string>
@@ -228,12 +229,14 @@ INSTANTIATE_TEST_SUITE_P(
         CreateNamespaceRequestInvalidParam{
             .test_name = "WrongNamespaceType",
             .invalid_json_str = R"({"namespace":"accounting%1Ftax","properties":null})",
-            .expected_error_message = "type must be array, but is string"},
+            .expected_error_message =
+                "Failed to parse 'namespace' (JSON value of type string)"},
         // Incorrect type for properties field
         CreateNamespaceRequestInvalidParam{
             .test_name = "WrongPropertiesType",
             .invalid_json_str = R"({"namespace":["accounting","tax"],"properties":[]})",
-            .expected_error_message = "type must be object, but is array"},
+            .expected_error_message =
+                "Failed to parse 'properties' (JSON value of type array)"},
         // Misspelled required field
         CreateNamespaceRequestInvalidParam{
             .test_name = "MisspelledKeys",
@@ -321,12 +324,14 @@ INSTANTIATE_TEST_SUITE_P(
         CreateNamespaceResponseInvalidParam{
             .test_name = "WrongNamespaceType",
             .invalid_json_str = R"({"namespace":"accounting%1Ftax","properties":null})",
-            .expected_error_message = "type must be array, but is string"},
+            .expected_error_message =
+                "Failed to parse 'namespace' (JSON value of type string)"},
         // Incorrect type for properties field
         CreateNamespaceResponseInvalidParam{
             .test_name = "WrongPropertiesType",
             .invalid_json_str = R"({"namespace":["accounting","tax"],"properties":[]})",
-            .expected_error_message = "type must be object, but is array"},
+            .expected_error_message =
+                "Failed to parse 'properties' (JSON value of type array)"},
         // Empty JSON object
         CreateNamespaceResponseInvalidParam{
             .test_name = "EmptyJson",
@@ -380,12 +385,14 @@ INSTANTIATE_TEST_SUITE_P(
         GetNamespaceResponseInvalidParam{
             .test_name = "WrongNamespaceType",
             .invalid_json_str = R"({"namespace":"accounting%1Ftax","properties":null})",
-            .expected_error_message = "type must be array, but is string"},
+            .expected_error_message =
+                "Failed to parse 'namespace' (JSON value of type string)"},
         // Incorrect type for properties field
         GetNamespaceResponseInvalidParam{
             .test_name = "WrongPropertiesType",
             .invalid_json_str = R"({"namespace":["accounting","tax"],"properties":[]})",
-            .expected_error_message = "type must be object, but is array"},
+            .expected_error_message =
+                "Failed to parse 'properties' (JSON value of type array)"},
         // Empty JSON object
         GetNamespaceResponseInvalidParam{
             .test_name = "EmptyJson",
@@ -506,12 +513,14 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongRemovalsType",
             .invalid_json_str =
                 R"({"removals":{"foo":"bar"},"updates":{"owner":"Hank"}})",
-            .expected_error_message = "type must be array, but is object"},
+            .expected_error_message =
+                "Failed to parse 'removals' (JSON value of type object)"},
         // Incorrect type for updates field
         UpdateNamespacePropertiesRequestInvalidParam{
             .test_name = "WrongUpdatesType",
             .invalid_json_str = R"({"removals":["foo","bar"],"updates":["owner"]})",
-            .expected_error_message = "type must be object, but is array"}),
+            .expected_error_message =
+                "Failed to parse 'updates' (JSON value of type array)"}),
     [](const ::testing::TestParamInfo<UpdateNamespacePropertiesRequestInvalidParam>&
            info) { return info.param.test_name; });
 
@@ -578,19 +587,22 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongRemovedType",
             .invalid_json_str =
                 R"({"removed":{"foo":true},"updated":["owner"],"missing":["bar"]})",
-            .expected_error_message = "type must be array, but is object"},
+            .expected_error_message =
+                "Failed to parse 'removed' (JSON value of type object)"},
         // Incorrect type for updated field
         UpdateNamespacePropertiesResponseInvalidParam{
             .test_name = "WrongUpdatedType",
             .invalid_json_str = R"({"updated":"owner","missing":["bar"]})",
-            .expected_error_message = "type must be array, but is string"},
+            .expected_error_message =
+                "Failed to parse 'updated' (JSON value of type string)"},
         // Valid top-level (array) types, but at least one entry in the list is not the
         // expected type
         UpdateNamespacePropertiesResponseInvalidParam{
             .test_name = "InvalidArrayEntryType",
             .invalid_json_str =
                 R"({"removed":["foo", "bar", 123456],"updated":["owner"],"missing":["bar"]})",
-            .expected_error_message = " type must be string, but is number"}),
+            .expected_error_message =
+                "Failed to parse 'removed' (JSON value of type array)"}),
     [](const ::testing::TestParamInfo<UpdateNamespacePropertiesResponseInvalidParam>&
            info) { return info.param.test_name; });
 
@@ -642,7 +654,8 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "InvalidIdentifierNamespaceType",
             .invalid_json_str =
                 R"({"identifiers":[{"namespace":"accounting.tax","name":"paid"}]})",
-            .expected_error_message = "type must be array, but is string"}),
+            .expected_error_message =
+                "Failed to parse 'namespace' (JSON value of type string)"}),
     [](const ::testing::TestParamInfo<ListTablesResponseInvalidParam>& info) {
       return info.param.test_name;
     });
@@ -852,13 +865,15 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongDefaultsType",
             .invalid_json_str =
                 R"({"defaults":["warehouse","s3://bucket/warehouse"],"overrides":{"clients":"5"}})",
-            .expected_error_message = "type must be object, but is array"},
+            .expected_error_message =
+                "Failed to parse 'defaults' (JSON value of type array)"},
         // Overrides has wrong type (string instead of object)
         CatalogConfigInvalidParam{
             .test_name = "WrongOverridesType",
             .invalid_json_str =
                 R"({"defaults":{"warehouse":"s3://bucket/warehouse"},"overrides":"clients"})",
-            .expected_error_message = "type must be object, but is string"},
+            .expected_error_message =
+                "Failed to parse 'overrides' (JSON value of type string)"},
         // Invalid endpoint format - missing space separator
         CatalogConfigInvalidParam{
             .test_name = "InvalidEndpointMissingSpace",
@@ -968,7 +983,8 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongMessageType",
             .invalid_json_str =
                 R"({"error":{"message":123,"type":"NoSuchNamespaceException","code":404}})",
-            .expected_error_message = "type must be string, but is number"}),
+            .expected_error_message =
+                "Failed to parse 'message' (JSON value of type number)"}),
     [](const ::testing::TestParamInfo<ErrorResponseInvalidParam>& info) {
       return info.param.test_name;
     });
@@ -1089,7 +1105,8 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongNameType",
             .invalid_json_str =
                 R"({"name":123,"schema":{"type":"struct","fields":[{"id":1,"name":"id","type":"int","required":true}]}})",
-            .expected_error_message = "type must be string, but is number"},
+            .expected_error_message =
+                "Failed to parse 'name' (JSON value of type number)"},
         // Wrong type for schema field
         CreateTableRequestInvalidParam{
             .test_name = "WrongSchemaType",
@@ -1234,18 +1251,21 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongMetadataLocationType",
             .invalid_json_str =
                 R"({"metadata-location":123,"metadata":{"format-version":2,"table-uuid":"test","location":"s3://test","last-sequence-number":0,"schemas":[{"type":"struct","schema-id":1,"fields":[{"id":1,"name":"id","type":"int","required":true}]}],"current-schema-id":1,"default-spec-id":0,"last-partition-id":0,"default-sort-order-id":0}})",
-            .expected_error_message = "type must be string, but is number"},
+            .expected_error_message =
+                "Failed to parse 'metadata-location' (JSON value of type number)"},
         // Wrong type for config field
         LoadTableResultInvalidParam{
             .test_name = "WrongConfigType",
             .invalid_json_str =
                 R"({"config":"invalid","metadata":{"format-version":2,"table-uuid":"test","location":"s3://test","last-sequence-number":0,"last-column-id":1,"last-updated-ms":0,"schemas":[{"type":"struct","schema-id":1,"fields":[{"id":1,"name":"id","type":"int","required":true}]}],"current-schema-id":1,"partition-specs":[{"spec-id":0,"fields":[]}],"default-spec-id":0,"last-partition-id":0,"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0}})",
-            .expected_error_message = "type must be object, but is string"},
+            .expected_error_message =
+                "Failed to parse 'config' (JSON value of type string)"},
         // Invalid metadata content
         LoadTableResultInvalidParam{
             .test_name = "InvalidMetadataContent",
             .invalid_json_str = R"({"metadata":{"format-version":"invalid"}})",
-            .expected_error_message = "type must be number, but is string"},
+            .expected_error_message =
+                "Failed to parse 'format-version' (JSON value of type string)"},
         LoadTableResultInvalidParam{
             .test_name = "LabelsFieldsNotArray",
             .invalid_json_str = LoadTableJsonWithLabels(R"({"fields":"oops"})"),
@@ -1394,7 +1414,8 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "InvalidIdentifierNameType",
             .invalid_json_str =
                 R"({"identifier":{"namespace":["ns1"],"name":23},"requirements":[],"updates":[]})",
-            .expected_error_message = "type must be string, but is number"},
+            .expected_error_message =
+                "Failed to parse 'name' (JSON value of type number)"},
         // Invalid requirements - non-object value in requirements array
         CommitTableRequestInvalidParam{
             .test_name = "InvalidRequirementsNonObject",
@@ -1506,7 +1527,8 @@ INSTANTIATE_TEST_SUITE_P(
             .test_name = "WrongMetadataLocationType",
             .invalid_json_str =
                 R"({"metadata-location":123,"metadata":{"format-version":2,"table-uuid":"test","location":"s3://test","last-sequence-number":0,"last-column-id":1,"last-updated-ms":0,"schemas":[{"type":"struct","schema-id":1,"fields":[{"id":1,"name":"id","type":"int","required":true}]}],"current-schema-id":1,"partition-specs":[{"spec-id":0,"fields":[]}],"default-spec-id":0,"last-partition-id":0,"sort-orders":[{"order-id":0,"fields":[]}],"default-sort-order-id":0}})",
-            .expected_error_message = "type must be string, but is number"},
+            .expected_error_message =
+                "Failed to parse 'metadata-location' (JSON value of type number)"},
         // Wrong type for metadata field
         CommitTableResponseInvalidParam{
             .test_name = "WrongMetadataType",
@@ -2850,12 +2872,16 @@ INSTANTIATE_TEST_SUITE_P(
         FieldLabelInvalidParam{.test_name = "NullLabels",
                                .invalid_json_str = R"({"field-id":1,"labels":null})",
                                .expected_error_message = "Missing 'labels'"},
-        FieldLabelInvalidParam{.test_name = "LabelsNotObject",
-                               .invalid_json_str = R"({"field-id":1,"labels":"x"})",
-                               .expected_error_message = "type must be object"},
-        FieldLabelInvalidParam{.test_name = "NonStringLabelValue",
-                               .invalid_json_str = R"({"field-id":1,"labels":{"k":1}})",
-                               .expected_error_message = "type must be string"}),
+        FieldLabelInvalidParam{
+            .test_name = "LabelsNotObject",
+            .invalid_json_str = R"({"field-id":1,"labels":"x"})",
+            .expected_error_message =
+                "Failed to parse 'labels' (JSON value of type string)"},
+        FieldLabelInvalidParam{
+            .test_name = "NonStringLabelValue",
+            .invalid_json_str = R"({"field-id":1,"labels":{"k":1}})",
+            .expected_error_message =
+                "Failed to parse 'labels' (JSON value of type object)"}),
     [](const ::testing::TestParamInfo<FieldLabelInvalidParam>& info) {
       return info.param.test_name;
     });
@@ -2919,15 +2945,21 @@ DECLARE_INVALID_TEST(Labels)
 INSTANTIATE_TEST_SUITE_P(
     LabelsInvalidCases, LabelsInvalidTest,
     ::testing::Values(
-        LabelsInvalidParam{.test_name = "ObjectLabelsNotObject",
-                           .invalid_json_str = R"({"object-labels":"x"})",
-                           .expected_error_message = "type must be object"},
-        LabelsInvalidParam{.test_name = "ObjectLabelsNonStringValue",
-                           .invalid_json_str = R"({"object-labels":{"k":1}})",
-                           .expected_error_message = "type must be string"},
-        LabelsInvalidParam{.test_name = "ObjectLabelsNullValue",
-                           .invalid_json_str = R"({"object-labels":{"k":null}})",
-                           .expected_error_message = "type must be string"},
+        LabelsInvalidParam{
+            .test_name = "ObjectLabelsNotObject",
+            .invalid_json_str = R"({"object-labels":"x"})",
+            .expected_error_message =
+                "Failed to parse 'object-labels' (JSON value of type string)"},
+        LabelsInvalidParam{
+            .test_name = "ObjectLabelsNonStringValue",
+            .invalid_json_str = R"({"object-labels":{"k":1}})",
+            .expected_error_message =
+                "Failed to parse 'object-labels' (JSON value of type object)"},
+        LabelsInvalidParam{
+            .test_name = "ObjectLabelsNullValue",
+            .invalid_json_str = R"({"object-labels":{"k":null}})",
+            .expected_error_message =
+                "Failed to parse 'object-labels' (JSON value of type object)"},
         LabelsInvalidParam{
             .test_name = "FieldsNotArray",
             .invalid_json_str = R"({"fields":{}})",
@@ -2947,5 +2979,51 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<LabelsInvalidParam>& info) {
       return info.param.test_name;
     });
+
+// Parse errors describe the offending key and JSON type; they must not
+// reproduce JSON values from the response.
+TEST(ParseErrorMessageTest, LoadTableResultErrorOmitsValues) {
+  constexpr std::string_view kConfigValue = "config-value-1234";
+  constexpr std::string_view kCredentialValue = "credential-value-5678";
+  nlohmann::json without_metadata = {
+      {"metadata-location", "s3://bucket/metadata/v1.json"},
+      {"config", {{"s3.secret-access-key", kConfigValue}}},
+      {"storage-credentials",
+       nlohmann::json::array(
+           {{{"prefix", "s3"}, {"config", {{"s3.session-token", kCredentialValue}}}}})}};
+  nlohmann::json mistyped_metadata = without_metadata;
+  mistyped_metadata["metadata"] = 1;
+
+  for (const auto& json : {without_metadata, mistyped_metadata}) {
+    auto result = LoadTableResultFromJson(json);
+    ASSERT_THAT(result, IsError(ErrorKind::kJsonParseError));
+    EXPECT_THAT(result, HasErrorMessage("metadata"));
+    EXPECT_THAT(result, ::testing::Not(HasErrorMessage(kConfigValue)));
+    EXPECT_THAT(result, ::testing::Not(HasErrorMessage(kCredentialValue)));
+  }
+}
+
+TEST(ParseErrorMessageTest, OAuthTokenResponseErrorOmitsValues) {
+  constexpr std::string_view kAccessToken = "access-token-1234";
+  constexpr std::string_view kRefreshToken = "refresh-token-5678";
+  nlohmann::json json = {{"access_token", kAccessToken},
+                         {"token_type", "bearer"},
+                         {"expires_in", "3600"},
+                         {"refresh_token", kRefreshToken}};
+
+  auto result = OAuthTokenResponseFromJson(json);
+  ASSERT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, HasErrorMessage("'expires_in'"));
+  EXPECT_THAT(result, HasErrorMessage("string"));
+  EXPECT_THAT(result, ::testing::Not(HasErrorMessage(kAccessToken)));
+  EXPECT_THAT(result, ::testing::Not(HasErrorMessage(kRefreshToken)));
+}
+
+TEST(ParseErrorMessageTest, InvalidJsonStringIsNotEchoed) {
+  constexpr std::string_view kValue = "access-token-1234";
+  auto result = FromJsonString(std::format(R"({{"access_token":"{}",)", kValue));
+  ASSERT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, ::testing::Not(HasErrorMessage(kValue)));
+}
 
 }  // namespace iceberg::rest
