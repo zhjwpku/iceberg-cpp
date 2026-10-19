@@ -75,6 +75,17 @@ namespace {
 /// \brief Default error type for unparseable REST responses.
 constexpr std::string_view kRestExceptionType = "RESTException";
 
+/// \brief Do not follow HTTP redirects on catalog requests.
+///
+/// cpr follows redirects by default. Signed requests are bound to the exact
+/// request URL and cannot be re-signed for a redirect target, and headers set
+/// on the request (e.g. the relocated `Original-Authorization` header used by
+/// SigV4) would be sent unchanged to the new location. A redirect response is
+/// therefore surfaced to the caller as an error instead of being followed.
+const cpr::Redirect kNoFollowRedirects{/*maximum=*/0L, /*follow=*/false,
+                                       /*cont_send_cred=*/false,
+                                       cpr::PostRedirectFlags::POST_ALL};
+
 /// \brief Merge default headers with per-request headers (per-request wins).
 HttpHeaders MergeHeaders(
     const std::unordered_map<std::string, std::string>& default_headers,
@@ -204,7 +215,8 @@ Result<HttpResponse> HttpClient::Get(
                           AuthenticateRequest(session, HttpMethod::kGet, std::move(url),
                                               MergeHeaders(default_headers_, headers)));
   cpr::Response response =
-      cpr::Get(cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
+      cpr::Get(cpr::Url{authenticated.url}, ToCprHeader(authenticated),
+               kNoFollowRedirects, *connection_pool_,
                cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
@@ -223,7 +235,7 @@ Result<HttpResponse> HttpClient::Post(
                           MergeHeaders(default_headers_, headers), body));
   cpr::Response response =
       cpr::Post(cpr::Url{authenticated.url}, cpr::Body{authenticated.body},
-                ToCprHeader(authenticated), *connection_pool_,
+                ToCprHeader(authenticated), kNoFollowRedirects, *connection_pool_,
                 cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
@@ -254,7 +266,7 @@ Result<HttpResponse> HttpClient::PostForm(
                           std::move(encoded_body)));
   cpr::Response response =
       cpr::Post(cpr::Url{authenticated.url}, cpr::Body{authenticated.body},
-                ToCprHeader(authenticated), *connection_pool_,
+                ToCprHeader(authenticated), kNoFollowRedirects, *connection_pool_,
                 cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
@@ -269,9 +281,10 @@ Result<HttpResponse> HttpClient::Head(
   ICEBERG_ASSIGN_OR_RAISE(auto authenticated,
                           AuthenticateRequest(session, HttpMethod::kHead, path,
                                               MergeHeaders(default_headers_, headers)));
-  cpr::Response response = cpr::Head(
-      cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
-      cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
+  cpr::Response response =
+      cpr::Head(cpr::Url{authenticated.url}, ToCprHeader(authenticated),
+                kNoFollowRedirects, *connection_pool_,
+                cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
@@ -289,8 +302,9 @@ Result<HttpResponse> HttpClient::Delete(
       AuthenticateRequest(session, HttpMethod::kDelete, std::move(url),
                           MergeHeaders(default_headers_, headers)));
   cpr::Response response = cpr::Delete(
-      cpr::Url{authenticated.url}, ToCprHeader(authenticated), *connection_pool_,
-      cpr::ConnectTimeout{connection_timeout_}, cpr::Timeout{socket_timeout_});
+      cpr::Url{authenticated.url}, ToCprHeader(authenticated), kNoFollowRedirects,
+      *connection_pool_, cpr::ConnectTimeout{connection_timeout_},
+      cpr::Timeout{socket_timeout_});
 
   ICEBERG_RETURN_UNEXPECTED(HandleFailureResponse(response, error_handler));
   HttpResponse http_response;
