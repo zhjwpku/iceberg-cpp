@@ -1705,13 +1705,7 @@ Result<std::unique_ptr<TableMetadata>> TableMetadataFromJson(const nlohmann::jso
 }
 
 Result<nlohmann::json> FromJsonString(const std::string& json_string) {
-  auto json =
-      nlohmann::json::parse(json_string, /*cb=*/nullptr, /*allow_exceptions=*/false);
-  if (json.is_discarded()) [[unlikely]] {
-    // Report the size only, not the raw input.
-    return JsonParseError("Failed to parse JSON string of {} bytes", json_string.size());
-  }
-  return json;
+  return ParseJsonString(json_string);
 }
 
 Result<std::string> ToJsonString(const nlohmann::json& json) {

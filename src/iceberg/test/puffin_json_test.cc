@@ -25,6 +25,7 @@
 #include "iceberg/puffin/file_metadata.h"
 #include "iceberg/puffin/json_serde_internal.h"
 #include "iceberg/test/matchers.h"
+#include "iceberg/util/json_util_internal.h"
 
 namespace iceberg::puffin {
 
@@ -196,6 +197,15 @@ TEST(PuffinJsonTest, FileMetadataFromInvalidString) {
   EXPECT_THAT(FileMetadataFromJsonString(""), IsError(ErrorKind::kJsonParseError));
   EXPECT_THAT(FileMetadataFromJsonString("{invalid}"),
               IsError(ErrorKind::kJsonParseError));
+}
+
+TEST(PuffinJsonTest, FileMetadataRejectsDeeplyNestedJson) {
+  const std::string json = R"({"blobs":[],"properties":)" +
+                           std::string(kMaxJsonNestingDepth, '[') +
+                           std::string(kMaxJsonNestingDepth, ']') + "}";
+  auto result = FileMetadataFromJsonString(json);
+  EXPECT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, HasErrorMessage("nesting depth"));
 }
 
 }  // namespace iceberg::puffin

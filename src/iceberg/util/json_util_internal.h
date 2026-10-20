@@ -20,9 +20,11 @@
 #pragma once
 
 #include <concepts>
+#include <cstdint>
 #include <format>
 #include <limits>
 #include <optional>
+#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -54,6 +56,37 @@ inline void SetOptionalStringField(nlohmann::json& json, std::string_view key,
                                    const std::string& value) {
   if (!value.empty()) {
     json[key] = value;
+  }
+}
+
+/// \brief Default object/array nesting limit for parsed JSON documents.
+inline constexpr int32_t kMaxJsonNestingDepth = 200;
+
+/// \brief Parse JSON and stop before constructing containers beyond max_depth.
+inline Result<nlohmann::json> ParseJsonString(std::string_view json_string,
+                                              int32_t max_depth = kMaxJsonNestingDepth) {
+  struct NestingDepthExceeded {};
+  const auto check_depth = [max_depth](int depth, nlohmann::json::parse_event_t event,
+                                       nlohmann::json&) {
+    if ((event == nlohmann::json::parse_event_t::object_start ||
+         event == nlohmann::json::parse_event_t::array_start) &&
+        depth >= max_depth) {
+      // Returning false only discards a value; throw to stop parsing immediately.
+      throw NestingDepthExceeded{};
+    }
+    return true;
+  };
+
+  try {
+    auto json = nlohmann::json::parse(json_string, check_depth,
+                                      /*allow_exceptions=*/false);
+    if (json.is_discarded()) [[unlikely]] {
+      return JsonParseError("Failed to parse JSON string of {} bytes",
+                            json_string.size());
+    }
+    return json;
+  } catch (const NestingDepthExceeded&) {
+    return JsonParseError("JSON nesting depth exceeds the maximum of {}", max_depth);
   }
 }
 

@@ -30,6 +30,7 @@
 #include "iceberg/schema_field.h"
 #include "iceberg/test/matchers.h"
 #include "iceberg/type.h"
+#include "iceberg/util/json_util_internal.h"
 
 namespace iceberg {
 
@@ -377,6 +378,27 @@ TEST(SchemaJsonTest, IdentifierFieldIds) {
   ICEBERG_UNWRAP_OR_FAIL(auto json_multi_identifiers_out,
                          ToJson(*schema_multi_identifiers));
   ASSERT_EQ(json_multi_identifiers_out, json_multi_identifiers);
+}
+
+TEST(JsonNestingDepthTest, EnforcesConfiguredLimit) {
+  EXPECT_THAT(ParseJsonString("[[[]]]", /*max_depth=*/3), IsOk());
+  EXPECT_THAT(ParseJsonString(R"({"a":[{"value":"[{}]"}]})", /*max_depth=*/3), IsOk());
+  // Reject excessive nesting before reading the invalid trailing input.
+  for (const auto* json : {"[[[[invalid", R"({"a":{"b":{"c":{invalid)"}) {
+    SCOPED_TRACE(json);
+    auto result = ParseJsonString(json, /*max_depth=*/3);
+    EXPECT_THAT(result, IsError(ErrorKind::kJsonParseError));
+    EXPECT_THAT(result, HasErrorMessage("nesting depth exceeds the maximum of 3"));
+  }
+}
+
+TEST(JsonNestingDepthTest, StringEntryPointEnforcesDefaultLimit) {
+  const std::string at_limit =
+      std::string(kMaxJsonNestingDepth, '[') + std::string(kMaxJsonNestingDepth, ']');
+  EXPECT_THAT(FromJsonString(at_limit), IsOk());
+  auto result = FromJsonString("[" + at_limit + "]");
+  EXPECT_THAT(result, IsError(ErrorKind::kJsonParseError));
+  EXPECT_THAT(result, HasErrorMessage("nesting depth"));
 }
 
 }  // namespace iceberg

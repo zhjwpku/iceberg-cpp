@@ -116,12 +116,8 @@ Result<FileMetadata> FileMetadataFromJsonString(std::string_view json_string) {
   if (json_string.empty()) {
     return JsonParseError("Cannot parse empty JSON string");
   }
-  try {
-    auto json = nlohmann::json::parse(json_string);
-    return FileMetadataFromJson(json);
-  } catch (const nlohmann::json::parse_error& e) {
-    return JsonParseError("Failed to parse JSON: {}", e.what());
-  }
+  ICEBERG_ASSIGN_OR_RAISE(auto json, ParseJsonString(json_string));
+  return FileMetadataFromJson(json);
 }
 
 }  // namespace iceberg::puffin
