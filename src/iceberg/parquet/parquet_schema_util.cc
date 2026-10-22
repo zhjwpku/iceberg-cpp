@@ -293,6 +293,20 @@ void SelectAnchorColumnIfEmpty(
   }
 }
 
+template <typename IcebergType, typename ParquetType>
+Status ValidateGeospatialParameters(const IcebergType& expected,
+                                    const ParquetType& actual,
+                                    const ::parquet::ColumnDescriptor& descr,
+                                    bool algorithm_matches = true) {
+  // Parquet represents an omitted CRS as an empty string.
+  const auto crs = actual.crs().empty() ? IcebergType::kDefaultCrs : actual.crs();
+  if (!StringUtils::EqualsIgnoreCase(expected.crs(), crs) || !algorithm_matches) {
+    return InvalidSchema("Cannot read Parquet type {} as Iceberg type {} for field {}",
+                         actual.ToString(), expected, descr.path()->ToDotString());
+  }
+  return {};
+}
+
 Status ValidateGeospatialParquetType(const Type& expected_type,
                                      const ::parquet::arrow::SchemaField& parquet_field,
                                      const ::parquet::ColumnDescriptor& descr) {
@@ -311,12 +325,20 @@ Status ValidateGeospatialParquetType(const Type& expected_type,
     if (!descr.logical_type()->is_geometry()) {
       return InvalidSchema("Iceberg geometry requires Parquet Geometry logical type");
     }
-    return {};
+    const auto& expected = internal::checked_cast<const GeometryType&>(expected_type);
+    const auto& actual = internal::checked_cast<const ::parquet::GeometryLogicalType&>(
+        *descr.logical_type());
+    return ValidateGeospatialParameters(expected, actual, descr);
   }
   if (!descr.logical_type()->is_geography()) {
     return InvalidSchema("Iceberg geography requires Parquet Geography logical type");
   }
-  return {};
+  const auto& expected = internal::checked_cast<const GeographyType&>(expected_type);
+  const auto& actual = internal::checked_cast<const ::parquet::GeographyLogicalType&>(
+      *descr.logical_type());
+  ICEBERG_ASSIGN_OR_RAISE(auto algorithm, ToParquetAlgorithm(expected.algorithm()));
+  return ValidateGeospatialParameters(expected, actual, descr,
+                                      algorithm == actual.algorithm());
 }
 
 }  // namespace
