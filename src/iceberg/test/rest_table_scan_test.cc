@@ -20,8 +20,12 @@
 #include "iceberg/catalog/rest/rest_table_scan.h"
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <future>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -268,8 +272,11 @@ class RestTableScanTest : public ::testing::Test {
     installed_provider = nullptr;
   }
 
-  Result<std::unique_ptr<DataTableScan>> MakeScan(RestScanContext ctx) {
-    return RestTableScan::Make(metadata_, schema_, file_io_, internal::TableScanContext{},
+  Result<std::unique_ptr<DataTableScan>> MakeScan(
+      RestScanContext ctx, OptionalExecutor executor = std::nullopt) {
+    internal::TableScanContext scan_context;
+    scan_context.plan_executor = executor;
+    return RestTableScan::Make(metadata_, schema_, file_io_, std::move(scan_context),
                                std::make_shared<const RestScanContext>(std::move(ctx)));
   }
 
@@ -561,9 +568,9 @@ TEST_F(RestTableScanTest, PlanFilesStreamFetchesNestedPlanTasksLazily) {
 }
 
 // --------------------------------------------------------------------------
-// PlanWith(): plan tasks are fetched serially and the executor is not used.
+// PlanWith(): plan task fetches run on the configured executor.
 // --------------------------------------------------------------------------
-TEST_F(RestTableScanTest, PlanFilesStreamIgnoresPlanExecutor) {
+TEST_F(RestTableScanTest, PlanFilesStreamUsesPlanExecutor) {
   constexpr std::string_view kPlanResponse =
       R"({"status":"completed","plan-id":"plan-exec","plan-tasks":["tok-1","tok-2"]})";
   constexpr std::string_view kTask1Response = R"({
@@ -583,7 +590,7 @@ TEST_F(RestTableScanTest, PlanFilesStreamIgnoresPlanExecutor) {
       .WillOnce(Return(HttpResponse(200, std::string(kTask1Response))))
       .WillOnce(Return(HttpResponse(200, std::string(kTask2Response))));
 
-  test::ThreadExecutor executor;
+  test::InlineExecutor executor;
   RestTableScanBuilder builder(metadata_, file_io_, "test.my_table", nullptr,
                                std::make_shared<const RestScanContext>(MakeContext()));
   builder.PlanWith(executor);
@@ -593,7 +600,7 @@ TEST_F(RestTableScanTest, PlanFilesStreamIgnoresPlanExecutor) {
   ASSERT_EQ(tasks.size(), 2);
   EXPECT_EQ(tasks[0]->data_file()->file_path, "s3://b/f1.parquet");
   EXPECT_EQ(tasks[1]->data_file()->file_path, "s3://b/f2.parquet");
-  EXPECT_EQ(executor.submit_count(), 0);
+  EXPECT_EQ(executor.submit_count(), 2);
 }
 
 // --------------------------------------------------------------------------
@@ -1215,6 +1222,153 @@ TEST_P(RestScanStreamTest, FetchesOnlyWhenBufferIsExhausted) {
   }
   ICEBERG_UNWRAP_OR_FAIL(auto end, stream->Next());
   EXPECT_FALSE(end.has_value());
+}
+
+TEST_P(RestScanStreamTest, PlanExecutorFetchesTasksConcurrently) {
+  test::ThreadExecutor executor;
+  ExpectPlan({{"plan-tasks", {"first", "second"}}});
+  std::atomic<int> entered{0};
+  std::promise<void> both_entered;
+  auto ready = both_entered.get_future().share();
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"), _, _, _, _))
+      .Times(3)
+      .WillRepeatedly(
+          [&](const auto&, const std::string& body, auto&&...) -> Result<HttpResponse> {
+            auto token = nlohmann::json::parse(body).at("plan-task").get<std::string>();
+            if (token != "nested") {
+              if (++entered == 2) both_entered.set_value();
+              if (ready.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+                return IOError("Task fetches did not overlap");
+              }
+            }
+            auto response = nlohmann::json{
+                {"file-scan-tasks",
+                 nlohmann::json::array({FileTaskJson("s3://b/" + token + ".parquet")})}};
+            if (token == "first") response["plan-tasks"] = {"nested"};
+            return HttpResponse(200, response.dump());
+          });
+  EXPECT_CALL(*mock_client_, Delete(_, _, _, _, _)).Times(0);
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, MakeScan(MakeContext(), std::ref(executor)));
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, scan->PlanFilesStream());
+  EXPECT_EQ(executor.submit_count(), 0);
+  ICEBERG_UNWRAP_OR_FAIL(auto tasks, stream->ToVector());
+  ASSERT_EQ(tasks.size(), 3);
+  EXPECT_EQ(entered, 2);
+  EXPECT_EQ(executor.submit_count(), 3);
+  EXPECT_EQ(tasks[0]->data_file()->file_path, "s3://b/first.parquet");
+  EXPECT_EQ(tasks[1]->data_file()->file_path, "s3://b/second.parquet");
+  EXPECT_EQ(tasks[2]->data_file()->file_path, "s3://b/nested.parquet");
+}
+
+TEST_P(RestScanStreamTest, RejectedSubmissionDrainsAcceptedFetchBeforeCancellation) {
+  test::MockExecutor executor;
+  ExpectPlan({{"plan-tasks", {"accepted", "rejected"}}});
+  std::promise<void> entered;
+  auto started = entered.get_future();
+  std::promise<void> release;
+  auto proceed = release.get_future().share();
+  std::atomic<bool> finished{false};
+  std::future<void> worker;
+  EXPECT_CALL(executor, Submit)
+      .WillOnce([&](ExecutorTask task) -> Status {
+        worker = std::async(std::launch::async,
+                            [task = std::move(task)]() mutable { std::move(task)(); });
+        return {};
+      })
+      .WillOnce([&](ExecutorTask) -> Status {
+        EXPECT_EQ(started.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+        release.set_value();
+        return IOError("Executor rejected task");
+      });
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"),
+                                  JsonBodyHas("plan-task", "accepted"), _, _, _))
+      .WillOnce([&](auto&&...) -> Result<HttpResponse> {
+        entered.set_value();
+        proceed.wait();
+        finished = true;
+        return HttpResponse(200, R"({"file-scan-tasks":[]})");
+      });
+  EXPECT_CALL(*mock_client_, Delete(::testing::EndsWith("/plan/stream"), _, _, _, _))
+      .WillOnce([&](auto&&...) -> Result<HttpResponse> {
+        EXPECT_TRUE(finished);
+        return HttpResponse(204, "");
+      });
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, MakeScan(MakeContext(), std::ref(executor)));
+  EXPECT_THAT(scan->PlanFiles(), IsError(ErrorKind::kIOError));
+  EXPECT_TRUE(finished);
+  worker.get();
+}
+
+TEST_P(RestScanStreamTest, ThrowingExecutorCancelsPlan) {
+  test::MockExecutor executor;
+  ExpectPlan({{"plan-tasks", {"pending"}}});
+  EXPECT_CALL(executor, Submit).WillOnce([](ExecutorTask) -> Status {
+    throw std::runtime_error("Executor stopped");
+  });
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"), _, _, _, _)).Times(0);
+  EXPECT_CALL(*mock_client_, Delete(::testing::EndsWith("/plan/stream"), _, _, _, _))
+      .WillOnce(Return(HttpResponse(204, "")));
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, MakeScan(MakeContext(), std::ref(executor)));
+  EXPECT_THAT(scan->PlanFiles(), IsError(ErrorKind::kUnknownError));
+}
+
+TEST_P(RestScanStreamTest, ThrowingFetchReturnsErrorAndCancelsPlan) {
+  test::InlineExecutor executor;
+  ExpectPlan({{"plan-tasks", {"pending"}}});
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"), _, _, _, _))
+      .WillOnce([](auto&&...) -> Result<HttpResponse> {
+        throw std::runtime_error("Transport failed");
+      });
+  EXPECT_CALL(*mock_client_, Delete(::testing::EndsWith("/plan/stream"), _, _, _, _))
+      .WillOnce(Return(HttpResponse(204, "")));
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, MakeScan(MakeContext(), std::ref(executor)));
+  EXPECT_THAT(scan->PlanFiles(), IsError(ErrorKind::kUnknownError));
+}
+
+TEST_P(RestScanStreamTest, ParallelPrefetchRemainsBoundedForLargePlans) {
+  test::InlineExecutor executor;
+  std::vector<std::string> tokens;
+  for (int i = 0; i < 100; ++i) tokens.push_back(std::to_string(i));
+  ExpectPlan({{"plan-tasks", tokens}});
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"), _, _, _, _))
+      .WillRepeatedly([&](const auto&, const std::string& body,
+                          auto&&...) -> Result<HttpResponse> {
+        const auto token = nlohmann::json::parse(body).at("plan-task").get<std::string>();
+        return HttpResponse(200, nlohmann::json{{"file-scan-tasks",
+                                                 nlohmann::json::array({FileTaskJson(
+                                                     "s3://b/" + token + ".parquet")})}}
+                                     .dump());
+      });
+  EXPECT_CALL(*mock_client_, Delete(::testing::EndsWith("/plan/stream"), _, _, _, _))
+      .WillOnce(Return(HttpResponse(204, "")));
+  ICEBERG_UNWRAP_OR_FAIL(auto scan, MakeScan(MakeContext(), std::ref(executor)));
+  ICEBERG_UNWRAP_OR_FAIL(auto stream, scan->PlanFilesStream());
+  ICEBERG_UNWRAP_OR_FAIL(auto first, stream->Next());
+  ASSERT_TRUE(first);
+  EXPECT_GT(executor.submit_count(), 1);
+  EXPECT_LT(executor.submit_count(), tokens.size());
+}
+
+TEST_P(RestScanRegressionTest, UsesPlanExecutorForTaskFetches) {
+  test::InlineExecutor executor;
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/plan"), _, _, _, _))
+      .WillOnce(Return(
+          HttpResponse(200, R"({"status":"completed","plan-tasks":["one","two"]})")));
+  EXPECT_CALL(*mock_client_, Post(::testing::EndsWith("/tasks"), _, _, _, _))
+      .Times(2)
+      .WillRepeatedly([&](const auto&, const std::string& body,
+                          auto&&...) -> Result<HttpResponse> {
+        const auto token = nlohmann::json::parse(body).at("plan-task").get<std::string>();
+        return HttpResponse(200, nlohmann::json{{"file-scan-tasks",
+                                                 nlohmann::json::array({FileTaskJson(
+                                                     "s3://b/" + token + ".parquet")})}}
+                                     .dump());
+      });
+  ICEBERG_UNWRAP_OR_FAIL(auto tasks,
+                         PlanScan(GetParam(), MakeContext(),
+                                  [&](auto& builder) { builder.PlanWith(executor); }));
+  EXPECT_EQ(tasks.size(), 2);
+  EXPECT_EQ(executor.submit_count(), 2);
 }
 
 TEST_P(RestScanStreamTest, UnconsumedPlanIsCancelled) {
