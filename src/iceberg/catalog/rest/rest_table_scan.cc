@@ -23,6 +23,8 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <exception>
+#include <future>
 #include <iterator>
 #include <thread>
 
@@ -243,21 +245,14 @@ Result<FetchPlanningResultResponse> FetchPlanningResult(
                  poll_config.max_retries, plan_id);
 }
 
-// TODO(sandeepg): Fetch plan tasks concurrently when an executor is configured via
-// PlanWith(), as Java's ScanTaskIterable does.
-/// A lazy stream that drives FetchScanTasks calls on demand.
-///
-/// The eager POST /plan (or poll until COMPLETED) is done before this stream is
-/// constructed. The stream then yields the directly-returned file_scan_tasks first,
-/// then fetches each plan_task token lazily one at a time as Next() is called,
-/// queuing any nested plan tasks returned by the server.
 class RestFileScanTaskStream final : public FileScanTaskStream {
  public:
   RestFileScanTaskStream(std::shared_ptr<const RestScanContext> ctx,
                          std::shared_ptr<Schema> schema, std::string plan_id,
                          std::vector<std::shared_ptr<FileScanTask>> initial_tasks,
                          std::vector<std::string> plan_task_tokens, SpecsById specs,
-                         std::shared_ptr<Expression> filter, bool ignore_residuals)
+                         std::shared_ptr<Expression> filter, bool ignore_residuals,
+                         OptionalExecutor executor)
       : ctx_(std::move(ctx)),
         schema_(std::move(schema)),
         plan_id_(std::move(plan_id)),
@@ -267,6 +262,7 @@ class RestFileScanTaskStream final : public FileScanTaskStream {
         specs_(std::move(specs)),
         filter_(filter ? std::move(filter) : True::Instance()),
         ignore_residuals_(ignore_residuals),
+        executor_(executor),
         cleanup_(*ctx_, plan_id_) {}
 
   ~RestFileScanTaskStream() override = default;
@@ -288,22 +284,87 @@ class RestFileScanTaskStream final : public FileScanTaskStream {
         cleanup_.Release();
         return std::nullopt;
       }
-      const std::string token = std::move(plan_task_tokens_.front());
-      plan_task_tokens_.pop_front();
-      ICEBERG_ASSIGN_OR_RAISE(auto result,
-                              FetchScanTasksOnce(*ctx_, *schema_, token, specs_));
-      if (result.plan_tasks.has_value()) {
-        plan_task_tokens_.insert(plan_task_tokens_.end(),
-                                 std::make_move_iterator(result.plan_tasks->begin()),
-                                 std::make_move_iterator(result.plan_tasks->end()));
-      }
-      buffer_ = std::move(result.file_scan_tasks)
-                    .value_or(std::vector<std::shared_ptr<FileScanTask>>{});
-      buffer_pos_ = 0;
+      ICEBERG_RETURN_UNEXPECTED(FetchNextBatch());
     }
   }
 
  private:
+  Status FetchNextBatch() {
+    // Bound prefetching so a lazy stream does not fetch the entire plan at once.
+    constexpr size_t kMaxConcurrentFetches = 8;
+    const size_t count =
+        std::min(plan_task_tokens_.size(), executor_ ? kMaxConcurrentFetches : size_t{1});
+    std::vector<std::future<Result<FetchScanTasksResponse>>> futures;
+    std::optional<Error> failure;
+    std::vector<FetchScanTasksResponse> results;
+    buffer_.clear();
+    buffer_pos_ = 0;
+    for (size_t i = 0; i < count; ++i) {
+      auto token = std::move(plan_task_tokens_.front());
+      plan_task_tokens_.pop_front();
+      if (!executor_) {
+        ICEBERG_ASSIGN_OR_RAISE(auto result,
+                                FetchScanTasksOnce(*ctx_, *schema_, token, specs_));
+        results.push_back(std::move(result));
+        break;
+      }
+      std::promise<Result<FetchScanTasksResponse>> promise;
+      auto future = promise.get_future();
+      ExecutorTask task([ctx = ctx_, schema = schema_, specs = specs_,
+                         token = std::move(token),
+                         promise = std::move(promise)]() mutable {
+        try {
+          promise.set_value(FetchScanTasksOnce(*ctx, *schema, token, specs));
+        } catch (const std::exception& error) {
+          promise.set_value(UnknownError("Scan task fetch threw: {}", error.what()));
+        } catch (...) {
+          promise.set_value(
+              UnknownError("Scan task fetch threw a non-standard exception"));
+        }
+      });
+      try {
+        auto status = executor_->get().Submit(std::move(task));
+        if (!status) {
+          failure = std::move(status.error());
+          break;
+        }
+        futures.push_back(std::move(future));
+      } catch (const std::exception& error) {
+        failure = UnknownError("Scan task submission threw: {}", error.what()).error();
+        break;
+      } catch (...) {
+        failure =
+            UnknownError("Scan task submission threw a non-standard exception").error();
+        break;
+      }
+    }
+    // Drain accepted work before returning an error and cancelling the server plan.
+    for (auto& future : futures) {
+      auto result = future.get();
+      if (!result) {
+        if (!failure) failure = std::move(result.error());
+      } else {
+        results.push_back(std::move(*result));
+      }
+    }
+    if (failure) {
+      return ::iceberg::unexpected(std::move(*failure));
+    }
+    for (auto& result : results) {
+      if (result.plan_tasks) {
+        plan_task_tokens_.insert(plan_task_tokens_.end(),
+                                 std::make_move_iterator(result.plan_tasks->begin()),
+                                 std::make_move_iterator(result.plan_tasks->end()));
+      }
+      if (result.file_scan_tasks) {
+        buffer_.insert(buffer_.end(),
+                       std::make_move_iterator(result.file_scan_tasks->begin()),
+                       std::make_move_iterator(result.file_scan_tasks->end()));
+      }
+    }
+    return {};
+  }
+
   std::shared_ptr<const RestScanContext> ctx_;
   std::shared_ptr<Schema> schema_;
   std::string plan_id_;
@@ -313,6 +374,7 @@ class RestFileScanTaskStream final : public FileScanTaskStream {
   SpecsById specs_;
   std::shared_ptr<Expression> filter_;
   bool ignore_residuals_;
+  OptionalExecutor executor_;
   PlanCancellationGuard cleanup_;
 };
 
@@ -320,7 +382,8 @@ class RestFileScanTaskStream final : public FileScanTaskStream {
 Result<FileScanTaskStreamPtr> ExecuteScanPlanStream(
     const std::shared_ptr<const RestScanContext>& rest_context, const Schema& schema,
     std::shared_ptr<Schema> schema_ptr, PlanTableScanRequest request,
-    const SpecsById& specs, std::shared_ptr<FileIO>& scan_io, bool ignore_residuals) {
+    const SpecsById& specs, std::shared_ptr<FileIO>& scan_io, bool ignore_residuals,
+    OptionalExecutor executor) {
   const auto& ctx = *rest_context;
   ICEBERG_ENDPOINT_CHECK(ctx.supported_endpoints, Endpoint::PlanTableScan());
   ICEBERG_ASSIGN_OR_RAISE(auto poll_config, ResolvePollConfig(ctx));
@@ -352,7 +415,7 @@ Result<FileScanTaskStreamPtr> ExecuteScanPlanStream(
         std::move(completed.file_scan_tasks)
             .value_or(std::vector<std::shared_ptr<FileScanTask>>{}),
         std::move(completed.plan_tasks).value_or(std::vector<std::string>{}), specs,
-        std::move(request.filter), ignore_residuals);
+        std::move(request.filter), ignore_residuals, executor);
     cleanup.Release();
     return stream;
   }
@@ -382,7 +445,8 @@ Result<FileScanTaskStreamPtr> ExecuteScanPlanStream(
 
   FileScanTaskStreamPtr stream = std::make_unique<RestFileScanTaskStream>(
       rest_context, std::move(schema_ptr), plan_id, std::move(initial_tasks),
-      std::move(plan_task_tokens), specs, std::move(request.filter), ignore_residuals);
+      std::move(plan_task_tokens), specs, std::move(request.filter), ignore_residuals,
+      executor);
   cleanup.Release();
   return stream;
 }
@@ -447,7 +511,8 @@ Result<FileScanTaskStreamPtr> RestTableScan::PlanFilesStream() const {
   }
 
   return ExecuteScanPlanStream(rest_context_, *schema_, schema_, std::move(request),
-                               specs, scan_io_, context_.ignore_residuals);
+                               specs, scan_io_, context_.ignore_residuals,
+                               context_.plan_executor);
 }
 
 const std::shared_ptr<FileIO>& RestTableScan::io() const {
@@ -539,7 +604,7 @@ Result<std::vector<std::shared_ptr<FileScanTask>>> RestIncrementalAppendScan::Pl
   ICEBERG_ASSIGN_OR_RAISE(
       auto stream,
       ExecuteScanPlanStream(rest_context_, *schema_, schema_, std::move(request), specs,
-                            scan_io_, context_.ignore_residuals));
+                            scan_io_, context_.ignore_residuals, context_.plan_executor));
   return stream->ToVector();
 }
 
