@@ -46,11 +46,20 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: Install Doxygen
+        env:
+          DOXYGEN_VERSION: 1.18.0
+          DOXYGEN_SHA256: 14fa81bdc34171edb5f1f02b1d60e74802f0439b77fa44e592565d517d72df90
         run: |
-          sudo apt-get update
-          sudo apt-get install -y doxygen
-          make install-deps
+          archive="doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/doxygen/doxygen/releases/download/Release_${DOXYGEN_VERSION//./_}/${archive}"
+          echo "${DOXYGEN_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}"
+          echo "${RUNNER_TEMP}/doxygen-${DOXYGEN_VERSION}/bin" >> "${GITHUB_PATH}"
+
+      - name: Install dependencies
+        run: make install-deps
 
       - name: Build API documentation with Doxygen
         run: make build-api-docs
