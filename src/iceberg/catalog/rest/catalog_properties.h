@@ -78,6 +78,12 @@ class ICEBERG_REST_EXPORT RestCatalogProperties
   /// \brief HTTP socket/read timeout in milliseconds, matching Java REST clients.
   inline static Entry<int64_t> kClientSocketTimeoutMs{"rest.client.socket-timeout-ms", 0};
 
+  /// \brief Whether server configuration may select the OAuth2 token endpoint.
+  /// When false, the client must explicitly configure an absolute http:// or https://
+  /// oauth2-server-uri. This setting is read from client configuration only.
+  inline static Entry<bool> kTrustServerOAuth2Uri{"rest.auth.oauth2.trust-server-uri",
+                                                  true};
+
   /// \brief Create a default RestCatalogProperties instance.
   static RestCatalogProperties default_properties();
 

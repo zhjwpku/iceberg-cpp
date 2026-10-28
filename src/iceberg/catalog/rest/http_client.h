@@ -75,7 +75,8 @@ class ICEBERG_REST_EXPORT HttpClient {
   /// \param connection_timeout,socket_timeout Zero leaves requests unbounded.
   explicit HttpClient(std::unordered_map<std::string, std::string> default_headers = {},
                       std::chrono::milliseconds connection_timeout = {},
-                      std::chrono::milliseconds socket_timeout = {});
+                      std::chrono::milliseconds socket_timeout = {},
+                      std::optional<std::string> base_uri = std::nullopt);
   virtual ~HttpClient();
 
   HttpClient(const HttpClient&) = delete;
@@ -115,6 +116,10 @@ class ICEBERG_REST_EXPORT HttpClient {
       const ErrorHandler& error_handler, auth::AuthSession& session);
 
  private:
+  /// \brief Build a request URI from this client's base URI and a path.
+  Result<std::string> RequestUri(const std::string& path) const;
+
+  std::optional<std::string> base_uri_;
   std::unordered_map<std::string, std::string> default_headers_;
   std::chrono::milliseconds connection_timeout_;
   std::chrono::milliseconds socket_timeout_;

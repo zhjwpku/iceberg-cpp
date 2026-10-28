@@ -35,6 +35,7 @@
 #include <nlohmann/json.hpp>
 
 #include "iceberg/catalog/rest/auth/auth_managers.h"
+#include "iceberg/catalog/rest/auth/auth_properties.h"
 #include "iceberg/catalog/rest/auth/auth_session.h"
 #include "iceberg/catalog/rest/catalog_properties.h"
 #include "iceberg/catalog/rest/constant.h"
@@ -456,13 +457,26 @@ Result<std::shared_ptr<RestCatalog>> RestCatalog::Make(
       const auto timeout_of = [&properties](const auto& entry) {
         return std::chrono::milliseconds(std::max<int64_t>(0, properties.Get(entry)));
       };
+      ICEBERG_ASSIGN_OR_RAISE(auto uri, properties.Uri());
       return std::make_shared<HttpClient>(
           properties.ExtractHeaders(),
           timeout_of(RestCatalogProperties::kClientConnectionTimeoutMs),
-          timeout_of(RestCatalogProperties::kClientSocketTimeoutMs));
+          timeout_of(RestCatalogProperties::kClientSocketTimeoutMs), std::string(uri));
     };
   }
   ICEBERG_ASSIGN_OR_RAISE(auto uri, config.Uri());
+
+  const bool trust_server_oauth2_uri =
+      config.Get(RestCatalogProperties::kTrustServerOAuth2Uri);
+  const auto endpoint =
+      config.configs().find(auth::AuthProperties::kOAuth2ServerUri.key());
+  if (!trust_server_oauth2_uri) {
+    ICEBERG_PRECHECK(
+        endpoint != config.configs().end() && (endpoint->second.starts_with("https://") ||
+                                               endpoint->second.starts_with("http://")),
+        "An explicit absolute http:// or https:// oauth2-server-uri is required when "
+        "rest.auth.oauth2.trust-server-uri is false");
+  }
 
   std::string catalog_name = config.Get(RestCatalogProperties::kName);
   ICEBERG_ASSIGN_OR_RAISE(auto auth_manager,
@@ -484,6 +498,12 @@ Result<std::shared_ptr<RestCatalog>> RestCatalog::Make(
 
   RestCatalogProperties final_config = RestCatalogProperties::FromMap(
       MergeConfigs(server_config.defaults, config.configs(), server_config.overrides));
+  // The server cannot change the client's endpoint trust policy or, when disabled,
+  // move the OAuth endpoint directly or through an override of the catalog URI.
+  final_config.Set(RestCatalogProperties::kTrustServerOAuth2Uri, trust_server_oauth2_uri);
+  if (!trust_server_oauth2_uri) {
+    final_config.mutable_configs().insert_or_assign(endpoint->first, endpoint->second);
+  }
 
   std::unordered_set<Endpoint> endpoints;
   if (!server_config.endpoints.empty()) {

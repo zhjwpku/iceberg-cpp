@@ -192,25 +192,45 @@ Status HandleFailureResponse(const cpr::Response& response,
 
 HttpClient::HttpClient(std::unordered_map<std::string, std::string> default_headers,
                        std::chrono::milliseconds connection_timeout,
-                       std::chrono::milliseconds socket_timeout)
-    : default_headers_{std::move(default_headers)},
+                       std::chrono::milliseconds socket_timeout,
+                       std::optional<std::string> base_uri)
+    : base_uri_{std::move(base_uri)},
+      default_headers_{std::move(default_headers)},
       connection_timeout_{connection_timeout},
       socket_timeout_{socket_timeout},
       connection_pool_{std::make_unique<cpr::ConnectionPool>()} {
   // Set default Content-Type for all requests (including GET/HEAD/DELETE).
-  // Many systems require that content type is set regardless and will fail,
-  // even on an empty bodied request.
+  // Many systems require that content type is set regardless, even on an empty body.
   default_headers_[kHeaderContentType] = kMimeTypeApplicationJson;
   default_headers_[kHeaderUserAgent] = kUserAgent;
 }
 
 HttpClient::~HttpClient() = default;
 
+Result<std::string> HttpClient::RequestUri(const std::string& path) const {
+  // Match Java HTTPRequest.check, then requestUri. URI syntax validation remains
+  // the transport's responsibility rather than emulating java.net.URI.
+  ICEBERG_PRECHECK(!path.starts_with('/'), "Request paths must not start with '/'");
+  const bool has_absolute_path =
+      path.starts_with("https://") || path.starts_with("http://");
+  ICEBERG_PRECHECK(base_uri_.has_value() || has_absolute_path,
+                   "Relative request path requires a base URI");
+  std::string full_path;
+  if (has_absolute_path) {
+    full_path = path;
+  } else {
+    auto base_uri = TrimTrailingSlash(*base_uri_);
+    full_path = std::string(TrimTrailingSlash(std::string(base_uri) + "/" + path));
+  }
+  return full_path;
+}
+
 Result<HttpResponse> HttpClient::Get(
     const std::string& path, const std::unordered_map<std::string, std::string>& params,
     const std::unordered_map<std::string, std::string>& headers,
     const ErrorHandler& error_handler, auth::AuthSession& session) {
-  ICEBERG_ASSIGN_OR_RAISE(auto url, AppendQueryString(path, params));
+  ICEBERG_ASSIGN_OR_RAISE(auto request_uri, RequestUri(path));
+  ICEBERG_ASSIGN_OR_RAISE(auto url, AppendQueryString(request_uri, params));
   ICEBERG_ASSIGN_OR_RAISE(auto authenticated,
                           AuthenticateRequest(session, HttpMethod::kGet, std::move(url),
                                               MergeHeaders(default_headers_, headers)));
@@ -229,9 +249,10 @@ Result<HttpResponse> HttpClient::Post(
     const std::string& path, const std::string& body,
     const std::unordered_map<std::string, std::string>& headers,
     const ErrorHandler& error_handler, auth::AuthSession& session) {
+  ICEBERG_ASSIGN_OR_RAISE(auto request_uri, RequestUri(path));
   ICEBERG_ASSIGN_OR_RAISE(
       auto authenticated,
-      AuthenticateRequest(session, HttpMethod::kPost, path,
+      AuthenticateRequest(session, HttpMethod::kPost, std::move(request_uri),
                           MergeHeaders(default_headers_, headers), body));
   cpr::Response response =
       cpr::Post(cpr::Url{authenticated.url}, cpr::Body{authenticated.body},
@@ -249,6 +270,7 @@ Result<HttpResponse> HttpClient::PostForm(
     const std::unordered_map<std::string, std::string>& form_data,
     const std::unordered_map<std::string, std::string>& headers,
     const ErrorHandler& error_handler, auth::AuthSession& session) {
+  ICEBERG_ASSIGN_OR_RAISE(auto request_uri, RequestUri(path));
   std::unordered_map<std::string, std::string> form_headers(headers);
   form_headers.insert_or_assign(kHeaderContentType, kMimeTypeFormUrlEncoded);
   std::vector<cpr::Pair> pair_list;
@@ -261,7 +283,7 @@ Result<HttpResponse> HttpClient::PostForm(
       cpr::Payload(pair_list.begin(), pair_list.end()).GetContent();
   ICEBERG_ASSIGN_OR_RAISE(
       auto authenticated,
-      AuthenticateRequest(session, HttpMethod::kPost, path,
+      AuthenticateRequest(session, HttpMethod::kPost, std::move(request_uri),
                           MergeHeaders(default_headers_, form_headers),
                           std::move(encoded_body)));
   cpr::Response response =
@@ -278,9 +300,11 @@ Result<HttpResponse> HttpClient::PostForm(
 Result<HttpResponse> HttpClient::Head(
     const std::string& path, const std::unordered_map<std::string, std::string>& headers,
     const ErrorHandler& error_handler, auth::AuthSession& session) {
-  ICEBERG_ASSIGN_OR_RAISE(auto authenticated,
-                          AuthenticateRequest(session, HttpMethod::kHead, path,
-                                              MergeHeaders(default_headers_, headers)));
+  ICEBERG_ASSIGN_OR_RAISE(auto request_uri, RequestUri(path));
+  ICEBERG_ASSIGN_OR_RAISE(
+      auto authenticated,
+      AuthenticateRequest(session, HttpMethod::kHead, std::move(request_uri),
+                          MergeHeaders(default_headers_, headers)));
   cpr::Response response =
       cpr::Head(cpr::Url{authenticated.url}, ToCprHeader(authenticated),
                 kNoFollowRedirects, *connection_pool_,
@@ -296,7 +320,8 @@ Result<HttpResponse> HttpClient::Delete(
     const std::string& path, const std::unordered_map<std::string, std::string>& params,
     const std::unordered_map<std::string, std::string>& headers,
     const ErrorHandler& error_handler, auth::AuthSession& session) {
-  ICEBERG_ASSIGN_OR_RAISE(auto url, AppendQueryString(path, params));
+  ICEBERG_ASSIGN_OR_RAISE(auto request_uri, RequestUri(path));
+  ICEBERG_ASSIGN_OR_RAISE(auto url, AppendQueryString(request_uri, params));
   ICEBERG_ASSIGN_OR_RAISE(
       auto authenticated,
       AuthenticateRequest(session, HttpMethod::kDelete, std::move(url),

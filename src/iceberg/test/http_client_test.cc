@@ -314,6 +314,34 @@ TEST(HttpClientTest, PostReportsTransferFailureAfterSuccessfulStatus) {
 
 #endif
 
+class CapturingAuthSession final : public auth::AuthSession {
+ public:
+  Result<HttpRequest> Authenticate(HttpRequest request) override {
+    request_ = std::move(request);
+    return InvalidArgument("captured");
+  }
+
+  const HttpRequest& request() const { return request_; }
+
+ private:
+  HttpRequest request_;
+};
+
+TEST(HttpClientTest, BuildsRequestUriLikeJavaHttpRequest) {
+  HttpClient client({}, {}, {}, std::string("https://catalog.example/api/"));
+  CapturingAuthSession session;
+
+  auto relative = client.PostForm("v1/oauth/tokens///", {}, {},
+                                  *DefaultErrorHandler::Instance(), session);
+  EXPECT_THAT(relative, IsError(ErrorKind::kInvalidArgument));
+  EXPECT_EQ(session.request().url, "https://catalog.example/api/v1/oauth/tokens");
+
+  auto absolute = client.PostForm("https://auth.example/token/", {}, {},
+                                  *DefaultErrorHandler::Instance(), session);
+  EXPECT_THAT(absolute, IsError(ErrorKind::kInvalidArgument));
+  EXPECT_EQ(session.request().url, "https://auth.example/token/");
+}
+
 // Redirect responses must be reported without replaying the request at the target.
 TEST(HttpClientTest, DoesNotFollowRedirects) {
 #ifdef _WIN32

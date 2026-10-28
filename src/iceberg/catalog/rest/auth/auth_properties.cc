@@ -21,9 +21,6 @@
 
 #include <utility>
 
-#include "iceberg/catalog/rest/catalog_properties.h"
-#include "iceberg/catalog/rest/rest_util.h"
-
 namespace iceberg::rest::auth {
 
 namespace {
@@ -34,31 +31,6 @@ std::pair<std::string, std::string> ParseCredential(const std::string& credentia
     return {"", credential};
   }
   return {credential.substr(0, colon_pos), credential.substr(colon_pos + 1)};
-}
-
-Result<std::string> ResolveOAuth2ServerUri(
-    const std::unordered_map<std::string, std::string>& properties) {
-  auto endpoint_it = properties.find(AuthProperties::kOAuth2ServerUri.key());
-  std::string endpoint = endpoint_it == properties.end()
-                             ? AuthProperties::kOAuth2ServerUri.value()
-                             : endpoint_it->second;
-
-  if (endpoint.starts_with("http://") || endpoint.starts_with("https://")) {
-    return endpoint;
-  }
-  if (endpoint.empty()) {
-    return endpoint;
-  }
-  auto uri_it = properties.find(RestCatalogProperties::kUri.key());
-  if (uri_it == properties.end() || uri_it->second.empty()) {
-    return endpoint;
-  }
-
-  auto base_uri = std::string(TrimTrailingSlash(uri_it->second));
-  if (endpoint.starts_with('/')) {
-    return base_uri + endpoint;
-  }
-  return base_uri + "/" + endpoint;
 }
 
 }  // namespace
@@ -86,9 +58,6 @@ Result<AuthProperties> AuthProperties::FromProperties(
     config.client_id_ = std::move(id);
     config.client_secret_ = std::move(secret);
   }
-
-  ICEBERG_ASSIGN_OR_RAISE(auto oauth2_server_uri, ResolveOAuth2ServerUri(properties));
-  config.Set(kOAuth2ServerUri, std::move(oauth2_server_uri));
 
   // TODO(lishuxu): Parse JWT exp claim from token to set expires_at_millis_.
 

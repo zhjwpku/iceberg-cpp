@@ -75,80 +75,6 @@ class AuthManagerTest : public ::testing::Test {
   std::shared_ptr<HttpClient> client_ = std::make_shared<HttpClient>();
 };
 
-TEST(AuthPropertiesTest, ResolvesDefaultOAuth2ServerUri) {
-  ICEBERG_UNWRAP_OR_FAIL(
-      auto config,
-      AuthProperties::FromProperties({
-          {RestCatalogProperties::kUri.key(), "https://catalog.example.com/api/"},
-          {RestCatalogProperties::kPrefix.key(), "warehouse"},
-      }));
-
-  EXPECT_EQ(config.oauth2_server_uri(),
-            "https://catalog.example.com/api/v1/oauth/tokens");
-}
-
-TEST(AuthPropertiesTest, PreservesEmptyOAuth2ServerUri) {
-  ICEBERG_UNWRAP_OR_FAIL(
-      auto config, AuthProperties::FromProperties({
-                       {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
-                       {AuthProperties::kOAuth2ServerUri.key(), ""},
-                   }));
-
-  EXPECT_TRUE(config.oauth2_server_uri().empty());
-}
-
-TEST(AuthPropertiesTest, ResolvesExplicitRelativeOAuth2ServerUri) {
-  ICEBERG_UNWRAP_OR_FAIL(
-      auto config,
-      AuthProperties::FromProperties({
-          {RestCatalogProperties::kUri.key(), "https://catalog.example.com/api/"},
-          {AuthProperties::kOAuth2ServerUri.key(), "oauth/token/"},
-      }));
-
-  EXPECT_EQ(config.oauth2_server_uri(), "https://catalog.example.com/api/oauth/token/");
-}
-
-TEST(AuthPropertiesTest, PreservesExplicitAbsoluteOAuth2ServerUri) {
-  ICEBERG_UNWRAP_OR_FAIL(
-      auto config,
-      AuthProperties::FromProperties({
-          {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
-          {AuthProperties::kOAuth2ServerUri.key(), "https://auth.example.com/token/"},
-      }));
-
-  EXPECT_EQ(config.oauth2_server_uri(), "https://auth.example.com/token/");
-}
-
-TEST(AuthPropertiesTest, PreservesRelativeOAuth2ServerUriWithoutCatalogUri) {
-  ICEBERG_UNWRAP_OR_FAIL(auto config,
-                         AuthProperties::FromProperties({
-                             {AuthProperties::kOAuth2ServerUri.key(), "oauth/token"},
-                         }));
-
-  EXPECT_EQ(config.oauth2_server_uri(), "oauth/token");
-}
-
-TEST(AuthPropertiesTest, PreservesAbsolutePathWithoutCatalogUri) {
-  ICEBERG_UNWRAP_OR_FAIL(auto config,
-                         AuthProperties::FromProperties({
-                             {AuthProperties::kOAuth2ServerUri.key(), "/oauth/token"},
-                         }));
-
-  EXPECT_EQ(config.oauth2_server_uri(), "/oauth/token");
-}
-
-TEST(AuthPropertiesTest, ResolvesOAuth2ServerUriWithLeadingSlash) {
-  ICEBERG_UNWRAP_OR_FAIL(
-      auto config,
-      AuthProperties::FromProperties({
-          {RestCatalogProperties::kUri.key(), "https://catalog.example.com/api/"},
-          {AuthProperties::kOAuth2ServerUri.key(), "/v1/oauth/tokens"},
-      }));
-
-  EXPECT_EQ(config.oauth2_server_uri(),
-            "https://catalog.example.com/api/v1/oauth/tokens");
-}
-
 // Verifies loading NoopAuthManager with explicit "none" auth type
 TEST_F(AuthManagerTest, LoadNoopAuthManagerExplicit) {
   std::unordered_map<std::string, std::string> properties = {
@@ -437,6 +363,7 @@ TEST_F(AuthManagerTest, OAuth2StaticToken) {
 TEST_F(AuthManagerTest, OAuth2InferredFromToken) {
   std::unordered_map<std::string, std::string> properties = {
       {AuthProperties::kToken.key(), "inferred-token"},
+      {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
   };
 
   auto manager_result = AuthManagers::Load("test-catalog", properties);
@@ -455,6 +382,7 @@ TEST_F(AuthManagerTest, OAuth2InferredFromToken) {
 TEST_F(AuthManagerTest, OAuth2MissingCredentials) {
   std::unordered_map<std::string, std::string> properties = {
       {AuthProperties::kAuthType, "oauth2"},
+      {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
   };
 
   auto manager_result = AuthManagers::Load("test-catalog", properties);
@@ -514,6 +442,7 @@ TEST_F(AuthManagerTest, OAuth2ContextTokenCreatesChildAndHasPriority) {
 TEST_F(AuthManagerTest, OAuth2ContextTypedTokenOnlyUsesCredentials) {
   std::unordered_map<std::string, std::string> properties = {
       {AuthProperties::kAuthType, "oauth2"},
+      {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
   };
   ICEBERG_UNWRAP_OR_FAIL(auto manager, AuthManagers::Load("test-catalog", properties));
   ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client_, properties));
@@ -557,6 +486,7 @@ TEST_F(AuthManagerTest, OAuth2TableTokenCreatesChild) {
 TEST_F(AuthManagerTest, OAuth2TableIgnoresCredential) {
   std::unordered_map<std::string, std::string> properties = {
       {AuthProperties::kAuthType, "oauth2"},
+      {RestCatalogProperties::kUri.key(), "https://catalog.example.com"},
   };
   ICEBERG_UNWRAP_OR_FAIL(auto manager, AuthManagers::Load("test-catalog", properties));
   ICEBERG_UNWRAP_OR_FAIL(auto parent, manager->CatalogSession(client_, properties));

@@ -17,6 +17,8 @@
  * under the License.
  */
 
+#include <chrono>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,6 +31,7 @@
 #include <nlohmann/json.hpp>
 
 #include "iceberg/catalog.h"
+#include "iceberg/catalog/rest/auth/auth_properties.h"
 #include "iceberg/catalog/rest/auth/auth_session.h"
 #include "iceberg/catalog/rest/catalog_properties.h"
 #include "iceberg/catalog/rest/endpoint.h"
@@ -39,6 +42,7 @@
 #include "iceberg/catalog/rest/rest_table.h"
 #include "iceberg/catalog/rest/rest_table_scan.h"
 #include "iceberg/catalog/rest/types.h"
+#include "iceberg/catalog/session_context.h"
 #include "iceberg/file_io.h"
 #include "iceberg/file_io_registry.h"
 #include "iceberg/labels.h"
@@ -613,6 +617,115 @@ TEST_P(RestCatalogScanLifetimeTest, ScanKeepsCredentialRefreshAlive) {
 }
 
 INSTANTIATE_TEST_SUITE_P(ScanModes, RestCatalogScanLifetimeTest, ::testing::Bool());
+
+class RestCatalogOAuth2UriTest : public RestCatalogLoadTableTest {
+ protected:
+  void SetUp() override {
+    RestCatalogLoadTableTest::SetUp();
+    init_client_ = std::make_shared<::testing::StrictMock<MockHttpClient>>();
+    mock_client_ = std::make_shared<::testing::StrictMock<MockHttpClient>>();
+    properties_ = {{"uri", "https://catalog.example/api"},
+                   {"credential", "client:secret"},
+                   {"oauth2-server-uri", "https://auth.example/token/"},
+                   {"token-refresh-enabled", "false"},
+                   {"io-impl", "rest-catalog-unit-test-noop"}};
+  }
+
+  void ExpectInit(const CatalogConfig& server_config,
+                  const std::string& token_response =
+                      R"({"access_token":"init","token_type":"bearer"})") {
+    EXPECT_CALL(*init_client_, PostForm("https://auth.example/token/", _, _, _, _))
+        .WillOnce(Return(HttpResponse(200, token_response)));
+    EXPECT_CALL(*init_client_, Get("https://catalog.example/api/v1/config", _, _, _, _))
+        .WillOnce(Return(HttpResponse(200, ToJson(server_config).dump())));
+  }
+
+  Result<std::shared_ptr<RestCatalog>> MakeOAuth2Catalog(Executor* executor = nullptr) {
+    return RestCatalog::Make(
+        RestCatalogProperties::FromMap(properties_),
+        [this](const RestCatalogProperties&) -> Result<std::shared_ptr<HttpClient>> {
+          return ++factory_calls_ == 1 ? init_client_ : mock_client_;
+        },
+        executor);
+  }
+
+  void CheckContextualRequest(const std::shared_ptr<RestCatalog>& root,
+                              const std::string& endpoint, const std::string& catalog_uri,
+                              const std::string& credential_type = "credential") {
+    EXPECT_CALL(*mock_client_, PostForm(endpoint, _, _, _, _))
+        .WillOnce(Return(
+            HttpResponse(200, R"({"access_token":"context","token_type":"bearer"})")));
+    EXPECT_CALL(*mock_client_, Get(catalog_uri + "/v1/namespaces", _, _, _, _))
+        .WillOnce(Return(HttpResponse(200, R"({"namespaces":[]})")));
+    ICEBERG_UNWRAP_OR_FAIL(
+        auto scoped,
+        root->WithContext({.session_id = "context",
+                           .credentials = {{credential_type, "user:context-secret"}}}));
+    EXPECT_THAT(scoped->ListNamespaces({}), IsOk());
+  }
+
+  std::shared_ptr<MockHttpClient> init_client_;
+  std::unordered_map<std::string, std::string> properties_;
+  int factory_calls_ = 0;
+};
+
+TEST_F(RestCatalogOAuth2UriTest, TrustsServerOverridesByDefault) {
+  ExpectInit({.overrides = {{"uri", "HTTPS://other-catalog.example/base/"},
+                            {"oauth2-server-uri", "oauth/token///"},
+                            {"rest.auth.oauth2.trust-server-uri", "false"}}});
+  ICEBERG_UNWRAP_OR_FAIL(auto root, MakeOAuth2Catalog());
+  CheckContextualRequest(root, "oauth/token///", "HTTPS://other-catalog.example/base",
+                         auth::AuthProperties::kIdTokenType);
+}
+
+TEST_F(RestCatalogOAuth2UriTest, RequiresAbsoluteClientEndpointBeforeAnyIoWhenUntrusted) {
+  properties_["rest.auth.oauth2.trust-server-uri"] = "false";
+  properties_.erase("oauth2-server-uri");
+  EXPECT_THAT(MakeOAuth2Catalog(), IsError(ErrorKind::kInvalidArgument));
+  for (const auto* endpoint :
+       {"", "token", "/token", "//auth.example/token", "ftp://auth.example/token",
+        "HTTPS://auth.example/token"}) {
+    SCOPED_TRACE(endpoint);
+    properties_["oauth2-server-uri"] = endpoint;
+    EXPECT_THAT(MakeOAuth2Catalog(), IsError(ErrorKind::kInvalidArgument));
+  }
+  EXPECT_EQ(factory_calls_, 0);
+}
+
+TEST_F(RestCatalogOAuth2UriTest, RefreshUsesTheClientEndpointWhenUntrusted) {
+  test::MockExecutor executor;
+  std::promise<ExecutorTask> queued;
+  auto ready = queued.get_future();
+  EXPECT_CALL(executor, Submit).WillOnce([&](ExecutorTask task) -> Status {
+    queued.set_value(std::move(task));
+    return {};
+  });
+  properties_["rest.auth.oauth2.trust-server-uri"] = "false";
+  properties_["token-refresh-enabled"] = "true";
+  ExpectInit({.overrides = {{"uri", "https://other-catalog.example"},
+                            {"oauth2-server-uri", "https://server-auth.example/token"},
+                            {"rest.auth.oauth2.trust-server-uri", "true"}}},
+             R"({"access_token":"expired","token_type":"bearer","expires_in":0})");
+  EXPECT_CALL(*mock_client_, PostForm("https://auth.example/token/", _, _, _, _))
+      .WillOnce(Return(
+          HttpResponse(200, R"({"access_token":"refreshed","token_type":"bearer"})")));
+  ICEBERG_UNWRAP_OR_FAIL(auto root, MakeOAuth2Catalog(&executor));
+  ASSERT_EQ(ready.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+  std::move(ready.get())();
+  EXPECT_CALL(*mock_client_,
+              Get("https://other-catalog.example/v1/namespaces", _, _, _, _))
+      .WillOnce(
+          [](const std::string&, const std::unordered_map<std::string, std::string>&,
+             const std::unordered_map<std::string, std::string>&, const ErrorHandler&,
+             auth::AuthSession& session) -> Result<HttpResponse> {
+            EXPECT_EQ(session.OAuth2Info()->token, "refreshed");
+            return HttpResponse(200, R"({"namespaces":[]})");
+          });
+  ICEBERG_UNWRAP_OR_FAIL(auto catalog, root->AsCatalog());
+  EXPECT_THAT(catalog->ListNamespaces({}), IsOk());
+  CheckContextualRequest(root, "https://auth.example/token/",
+                         "https://other-catalog.example");
+}
 
 }  // namespace
 

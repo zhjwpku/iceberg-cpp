@@ -59,7 +59,8 @@ class ICEBERG_REST_EXPORT RestCatalog final
 
   /// \brief Create a RestCatalog instance.
   /// \param client_factory Optional HTTP client factory, called with the initial config
-  /// and then the merged server config. When empty, uses the default HTTP client.
+  /// and then the merged server config. It should configure the HTTP client's base URI
+  /// from the supplied properties. When empty, uses the default HTTP client.
   /// \param auth_executor Borrowed OAuth2 refresh executor. With OAuth2 credentials,
   /// token-refresh-enabled=true (default) requires it; null returns InvalidArgument.
   /// Must enqueue asynchronously and outlive the catalog, its auth sessions and their
