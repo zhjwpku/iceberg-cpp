@@ -90,18 +90,13 @@ jobs:
         run: |
           echo "CC=${{ matrix.CC }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.CXX }}" >> $GITHUB_ENV
-      - name: Cache vcpkg packages
-        if: ${{ startsWith(matrix.runs-on, 'windows') }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: vcpkg-cache
-        with:
-          path: C:/vcpkg/installed
-          key: vcpkg-x64-windows-sql-catalog-${{ hashFiles('.github/workflows/sql_catalog_test.yml') }}
       - name: Install dependencies on Windows
-        if: ${{ startsWith(matrix.runs-on, 'windows') && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
-        shell: pwsh
-        run: |
-          vcpkg install zlib:x64-windows nlohmann-json:x64-windows nanoarrow:x64-windows roaring:x64-windows sqlite3:x64-windows openssl:x64-windows
+        if: ${{ startsWith(matrix.runs-on, 'windows') }}
+        uses: ./.github/actions/setup-vcpkg
+        with:
+          packages: >-
+            zlib:x64-windows nlohmann-json:x64-windows nanoarrow:x64-windows
+            roaring:x64-windows sqlite3:x64-windows openssl:x64-windows
       - name: Set up sccache
         uses: ./.github/actions/setup-sccache
         with:
