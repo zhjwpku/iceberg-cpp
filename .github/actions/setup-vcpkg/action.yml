@@ -1,0 +1,114 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Set up Windows vcpkg dependencies
+description: Restore source downloads and binary packages, install dependencies, and save reusable caches.
+
+inputs:
+  packages:
+    description: Whitespace-separated vcpkg package specifications, including their triplets.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure vcpkg caches
+      id: config
+      shell: pwsh
+      env:
+        VCPKG_PACKAGES: ${{ inputs.packages }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $vcpkgRoot = 'C:/vcpkg'
+        $revision = & git -C $vcpkgRoot rev-parse HEAD
+        if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the vcpkg registry revision' }
+        $packages = ($env:VCPKG_PACKAGES -split '\s+' | Where-Object { $_ } | Sort-Object -Unique) -join ' '
+        if (-not $packages) { throw 'At least one vcpkg package is required' }
+        $packageHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($packages)))
+        $compilerHash = (Get-FileHash (Get-Command cl.exe).Source -Algorithm SHA256).Hash
+        $downloads = Join-Path $env:RUNNER_TEMP 'vcpkg-downloads'
+        $binaries = Join-Path $env:RUNNER_TEMP 'vcpkg-binaries'
+        New-Item -ItemType Directory -Force -Path $downloads, $binaries | Out-Null
+        # msvc-dev-cmd sets VCPKG_ROOT to Visual Studio's separate vcpkg copy.
+        # Keep install and the CMake toolchain on the same standalone instance.
+        Add-Content $env:GITHUB_ENV "VCPKG_ROOT=$vcpkgRoot"
+        Add-Content $env:GITHUB_ENV "VCPKG_DOWNLOADS=$downloads"
+        Add-Content $env:GITHUB_ENV "VCPKG_BINARY_SOURCES=clear;files,$binaries,readwrite"
+        Add-Content $env:GITHUB_OUTPUT "revision=$($revision.Trim())"
+        Add-Content $env:GITHUB_OUTPUT "packages=$packageHash"
+        Add-Content $env:GITHUB_OUTPUT "compiler=$compilerHash"
+        Add-Content $env:GITHUB_OUTPUT "image=$env:ImageVersion"
+        Add-Content $env:GITHUB_OUTPUT "downloads=$downloads"
+        Add-Content $env:GITHUB_OUTPUT "binaries=$binaries"
+
+    - name: Restore vcpkg source downloads
+      id: downloads
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.config.outputs.downloads }}
+        key: vcpkg-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.revision }}-${{ steps.config.outputs.packages }}
+        restore-keys: |
+          vcpkg-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.revision }}-
+          vcpkg-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Restore vcpkg binary packages
+      id: binaries
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.config.outputs.binaries }}
+        key: vcpkg-binaries-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.compiler }}-${{ steps.config.outputs.image }}-${{ steps.config.outputs.revision }}-${{ steps.config.outputs.packages }}
+        # vcpkg checks each binary's ABI before reuse, so common packages can be
+        # restored across workflows, package lists, and registry updates safely.
+        restore-keys: |
+          vcpkg-binaries-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.compiler }}-${{ steps.config.outputs.image }}-${{ steps.config.outputs.revision }}-
+          vcpkg-binaries-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.compiler }}-
+
+    - name: Install vcpkg dependencies
+      shell: pwsh
+      env:
+        VCPKG_PACKAGES: ${{ inputs.packages }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $false
+        $packages = @($env:VCPKG_PACKAGES -split '\s+' | Where-Object { $_ })
+        # Always install: vcpkg validates binary ABIs instead of trusting a cached
+        # installed tree from a different compiler or runner image.
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+          & "$env:VCPKG_ROOT/vcpkg.exe" install @packages
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          if ($attempt -lt 3) {
+            Write-Host "::warning::vcpkg install failed (attempt $attempt/3), retrying in 30s"
+            Start-Sleep -Seconds 30
+          }
+        }
+        exit $LASTEXITCODE
+
+    # Save as soon as dependency installation succeeds, even if Iceberg fails
+    # later. Stable keys avoid creating another full snapshot on every run.
+    - name: Save vcpkg source downloads
+      if: ${{ github.ref == 'refs/heads/main' && steps.downloads.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.config.outputs.downloads }}
+        key: ${{ steps.downloads.outputs.cache-primary-key }}
+
+    - name: Save vcpkg binary packages
+      if: ${{ github.ref == 'refs/heads/main' && steps.binaries.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.config.outputs.binaries }}
+        key: ${{ steps.binaries.outputs.cache-primary-key }}
