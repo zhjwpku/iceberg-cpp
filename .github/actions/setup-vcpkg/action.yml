@@ -16,7 +16,10 @@
 # under the License.
 
 name: Set up Windows vcpkg dependencies
-description: Restore source downloads and binary packages, install dependencies, and save reusable caches.
+description: >-
+  Restore source downloads and binary packages, install dependencies, and save
+  reusable caches. Requires ilammy/msvc-dev-cmd or equivalent MSVC initialization
+  to put cl.exe on PATH before this action runs.
 
 inputs:
   packages:
@@ -34,7 +37,7 @@ runs:
       run: |
         $ErrorActionPreference = 'Stop'
         $vcpkgRoot = 'C:/vcpkg'
-        $revision = & git -C $vcpkgRoot rev-parse HEAD
+        $revision = & git -c "safe.directory=$vcpkgRoot" -C $vcpkgRoot rev-parse HEAD
         if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the vcpkg registry revision' }
         $packages = ($env:VCPKG_PACKAGES -split '\s+' | Where-Object { $_ } | Sort-Object -Unique) -join ' '
         if (-not $packages) { throw 'At least one vcpkg package is required' }
@@ -55,6 +58,9 @@ runs:
         Add-Content $env:GITHUB_OUTPUT "downloads=$downloads"
         Add-Content $env:GITHUB_OUTPUT "binaries=$binaries"
 
+    # Fallback restores retain older archives. If snapshots grow too large for
+    # the shared repository cache quota, bump v1 in both cache prefixes to reset
+    # them without restoring the old snapshots.
     - name: Restore vcpkg source downloads
       id: downloads
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
