@@ -38,6 +38,7 @@ runs:
         echo "SCCACHE_DIR=${{ github.workspace }}/.sccache" >> "$GITHUB_ENV"
         echo "SCCACHE_CACHE_SIZE=${CACHE_SIZE}" >> "$GITHUB_ENV"
         echo "SCCACHE_KEY_SUFFIX=" >> "$GITHUB_ENV"
+        echo "SCCACHE_READY=false" >> "$GITHUB_ENV"
 
     # Windows caches include the MSVC toolset version because GitHub runner image
     # rollouts can change the compiler while keeping the same image label.
@@ -57,3 +58,7 @@ runs:
 
     - name: Setup sccache
       uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+    - name: Mark sccache ready
+      shell: bash
+      run: echo "SCCACHE_READY=true" >> "$GITHUB_ENV"
