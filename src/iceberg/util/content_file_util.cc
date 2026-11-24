@@ -20,12 +20,17 @@
 #include "iceberg/util/content_file_util.h"
 
 #include <format>
+#include <utility>
 
 #include "iceberg/file_format.h"
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/metadata_columns.h"
 #include "iceberg/util/conversions.h"
+#include "iceberg/util/endian.h"
+#include "iceberg/util/hour_bounds_internal.h"
 #include "iceberg/util/macros.h"
+#include "iceberg/util/math_util_internal.h"
+#include "iceberg/util/temporal_util.h"
 
 namespace iceberg {
 
@@ -125,6 +130,41 @@ void ContentFileUtil::DropUnselectedStats(
                                                   selected_columns);
   DropUnselectedColumnStats<std::vector<uint8_t>>(data_file.upper_bounds,
                                                   selected_columns);
+}
+
+Result<std::optional<std::pair<int32_t, int32_t>>> internal::ReadHourBounds(
+    const DataFile& file, const SchemaField& field) {
+  const auto read_hour = [&](const auto& bounds) -> Result<std::optional<int32_t>> {
+    auto it = bounds.find(field.field_id());
+    if (it == bounds.end()) {
+      return std::nullopt;
+    }
+    const auto& bytes = it->second;
+    int64_t hour;
+    if (bytes.size() == sizeof(int64_t)) {
+      constexpr int64_t kMicrosPerHour = kSecondsPerHour * kMicrosPerSecond;
+      hour = FloorDiv(ReadLittleEndian<int64_t>(bytes.data()), kMicrosPerHour);
+    } else if (bytes.size() == sizeof(int32_t) &&
+               field.type()->type_id() == TypeId::kTimestamp) {
+      // A legacy date bound is already in whole days. Convert directly to hours.
+      hour = ReadLittleEndian<int32_t>(bytes.data()) * kHoursPerDay;
+    } else {
+      return InvalidArgument("Invalid timestamp bound size: {}", bytes.size());
+    }
+    if (!std::in_range<int32_t>(hour)) {
+      return std::nullopt;
+    }
+    return static_cast<int32_t>(hour);
+  };
+  ICEBERG_ASSIGN_OR_RAISE(auto lower, read_hour(file.lower_bounds));
+  if (!lower) {
+    return std::nullopt;
+  }
+  ICEBERG_ASSIGN_OR_RAISE(auto upper, read_hour(file.upper_bounds));
+  if (!upper) {
+    return std::nullopt;
+  }
+  return std::pair{*lower, *upper};
 }
 
 }  // namespace iceberg

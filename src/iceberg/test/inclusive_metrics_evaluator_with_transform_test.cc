@@ -17,6 +17,7 @@
  * under the License.
  */
 
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -117,6 +118,64 @@ class InclusiveMetricsEvaluatorWithTransformTest : public ::testing::Test {
   std::shared_ptr<Schema> schema_;
   std::shared_ptr<DataFile> data_file_;
 };
+
+TEST_F(InclusiveMetricsEvaluatorWithTransformTest, HourBoundsAfterDatePromotion) {
+  schema_ = std::make_shared<Schema>(
+      std::vector<SchemaField>{SchemaField::MakeRequired(1, "ts", timestamp())});
+  auto hour = ToBoundTransform(Expressions::Hour("ts"));
+  auto file = std::make_shared<DataFile>();
+  file->record_count = 1;
+  // This many days fit in timestamp micros, but their hours exceed INT32_MAX.
+  constexpr int32_t kDays = 89'478'486;
+  ICEBERG_UNWRAP_OR_FAIL(auto epoch, Literal::Date(0).Serialize());
+  ICEBERG_UNWRAP_OR_FAIL(auto before, Literal::Date(-kDays).Serialize());
+  ICEBERG_UNWRAP_OR_FAIL(auto after, Literal::Date(kDays).Serialize());
+  file->lower_bounds = {{1, epoch}};
+  file->upper_bounds = {{1, after}};
+  ExpectShouldRead(Expressions::GreaterThanOrEqual(hour, Literal::Int(0)),
+                   kRowsMightMatch, file);
+  // An actual hour beyond INT32_MAX can wrap below the in-range lower bound.
+  ExpectShouldRead(Expressions::LessThan(hour, Literal::Int(0)), kRowsMightMatch, file);
+
+  file->lower_bounds = {{1, before}};
+  file->upper_bounds = {{1, epoch}};
+  ExpectShouldRead(Expressions::LessThanOrEqual(hour, Literal::Int(0)), kRowsMightMatch,
+                   file);
+  ExpectShouldRead(Expressions::GreaterThan(hour, Literal::Int(0)), kRowsMightMatch,
+                   file);
+
+  file->lower_bounds = {{1, epoch}};
+  ExpectShouldRead(Expressions::GreaterThan(hour, Literal::Int(0)), kRowCannotMatch,
+                   file);
+  file->lower_bounds.clear();
+  ExpectShouldRead(Expressions::GreaterThan(hour, Literal::Int(0)), kRowsMightMatch,
+                   file);
+}
+
+TEST_F(InclusiveMetricsEvaluatorWithTransformTest, HourBoundsAtInt32Limits) {
+  auto hour = ToBoundTransform(Expressions::Hour("ts"));
+  constexpr int64_t kMicrosPerHour =
+      internal::kSecondsPerHour * internal::kMicrosPerSecond;
+  constexpr int64_t kFirstHour = std::numeric_limits<int32_t>::min();
+  constexpr int64_t kLastHour = std::numeric_limits<int32_t>::max();
+  auto file = std::make_shared<DataFile>();
+  file->record_count = 1;
+  auto expect_bounds = [&](int64_t lower, int64_t upper, const auto& expr,
+                           bool expected) {
+    ICEBERG_UNWRAP_OR_FAIL(file->lower_bounds[2],
+                           Literal::TimestampTz(lower).Serialize());
+    ICEBERG_UNWRAP_OR_FAIL(file->upper_bounds[2],
+                           Literal::TimestampTz(upper).Serialize());
+    ExpectShouldRead(expr, expected, file);
+  };
+  auto positive = Expressions::GreaterThan(hour, Literal::Int(0));
+  expect_bounds(kFirstHour * kMicrosPerHour, 0, positive, kRowCannotMatch);
+  expect_bounds(kFirstHour * kMicrosPerHour - 1, 0, positive, kRowsMightMatch);
+
+  auto negative = Expressions::LessThan(hour, Literal::Int(0));
+  expect_bounds(0, (kLastHour + 1) * kMicrosPerHour - 1, negative, kRowCannotMatch);
+  expect_bounds(0, (kLastHour + 1) * kMicrosPerHour, negative, kRowsMightMatch);
+}
 
 TEST_F(InclusiveMetricsEvaluatorWithTransformTest, AllNullsWithNonOrderPreserving) {
   auto bucket_all_nulls = ToBoundTransform(Expressions::Bucket("all_nulls", 100));

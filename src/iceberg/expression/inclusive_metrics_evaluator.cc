@@ -27,6 +27,7 @@
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/schema.h"
 #include "iceberg/transform.h"
+#include "iceberg/util/hour_bounds_internal.h"
 #include "iceberg/util/macros.h"
 
 namespace iceberg {
@@ -415,7 +416,7 @@ class InclusiveMetricsVisitor : public BoundVisitor<bool> {
       return ParseLowerBound(*reference);
     } else if (auto transform = dynamic_cast<BoundTransform*>(expr.get());
                transform != nullptr) {
-      return TransformLowerBound(*transform);
+      return TransformBound(*transform, /*lower=*/true);
     } else {
       return std::nullopt;
     }
@@ -428,7 +429,7 @@ class InclusiveMetricsVisitor : public BoundVisitor<bool> {
       return ParseUpperBound(*reference);
     } else if (auto transform = dynamic_cast<BoundTransform*>(expr.get());
                transform != nullptr) {
-      return TransformUpperBound(*transform);
+      return TransformBound(*transform, /*lower=*/false);
     } else {
       return std::nullopt;
     }
@@ -492,32 +493,33 @@ class InclusiveMetricsVisitor : public BoundVisitor<bool> {
     return std::nullopt;
   }
 
-  Result<std::optional<Literal>> TransformLowerBound(BoundTransform& boundTransform) {
-    auto transform = boundTransform.transform();
-    if (transform->PreservesOrder()) {
-      ICEBERG_ASSIGN_OR_RAISE(auto lower, ParseLowerBound(*boundTransform.reference()));
-      if (lower.has_value()) {
-        ICEBERG_ASSIGN_OR_RAISE(auto transform_func,
-                                transform->Bind(boundTransform.reference()->type()));
-        return transform_func->Transform(lower.value());
-      }
+  Result<std::optional<Literal>> TransformBound(const BoundTransform& term, bool lower) {
+    const auto& transform = term.transform();
+    if (!transform->PreservesOrder()) {
+      return std::nullopt;
     }
-
-    return std::nullopt;
-  }
-
-  Result<std::optional<Literal>> TransformUpperBound(BoundTransform& boundTransform) {
-    auto transform = boundTransform.transform();
-    if (transform->PreservesOrder()) {
-      ICEBERG_ASSIGN_OR_RAISE(auto upper, ParseUpperBound(*boundTransform.reference()));
-      if (upper.has_value()) {
-        ICEBERG_ASSIGN_OR_RAISE(auto transform_func,
-                                transform->Bind(boundTransform.reference()->type()));
-        return transform_func->Transform(upper.value());
+    const auto ref = term.reference();
+    const auto type_id = ref->type()->type_id();
+    if (transform->transform_type() == TransformType::kHour &&
+        (type_id == TypeId::kTimestamp || type_id == TypeId::kTimestampTz)) {
+      const auto& field = ref->field();
+      if (hour_field_ != field.field_id()) {
+        ICEBERG_ASSIGN_OR_RAISE(hour_bounds_,
+                                internal::ReadHourBounds(data_file_, field));
+        hour_field_ = field.field_id();
       }
+      if (!hour_bounds_) {
+        return std::nullopt;
+      }
+      return Literal::Int(lower ? hour_bounds_->first : hour_bounds_->second);
     }
-
-    return std::nullopt;
+    ICEBERG_ASSIGN_OR_RAISE(auto bound,
+                            lower ? ParseLowerBound(*ref) : ParseUpperBound(*ref));
+    if (!bound) {
+      return std::nullopt;
+    }
+    ICEBERG_ASSIGN_OR_RAISE(auto func, transform->Bind(ref->type()));
+    return func->Transform(*bound);
   }
 
   /** Returns true if the expression term produces a non-null value for non-null input. */
@@ -536,6 +538,8 @@ class InclusiveMetricsVisitor : public BoundVisitor<bool> {
 
  private:
   const DataFile& data_file_;
+  std::optional<int32_t> hour_field_;
+  std::optional<std::pair<int32_t, int32_t>> hour_bounds_;
 };
 
 InclusiveMetricsEvaluator::InclusiveMetricsEvaluator(std::shared_ptr<Expression> expr)

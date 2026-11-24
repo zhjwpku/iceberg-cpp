@@ -28,6 +28,7 @@
 #include "iceberg/schema.h"
 #include "iceberg/test/matchers.h"
 #include "iceberg/type.h"
+#include "iceberg/util/temporal_util.h"
 
 namespace iceberg {
 
@@ -325,6 +326,35 @@ TEST(AggregateTest, AggregatesFromDataFileWithTransform) {
   EXPECT_EQ(std::get<int32_t>(results[0].value()), 20);
   EXPECT_EQ(std::get<int32_t>(results[1].value()), 0);
   EXPECT_TRUE(evaluator->AllAggregatorsValid());
+}
+
+TEST(AggregateTest, HourExtremaRequireRepresentableBounds) {
+  Schema schema({SchemaField::MakeRequired(1, "ts", timestamp())});
+  auto hour = Expressions::Hour("ts");
+  auto min = BindAggregate(schema, Expressions::Min(hour));
+  auto max = BindAggregate(schema, Expressions::Max(hour));
+  ICEBERG_UNWRAP_OR_FAIL(auto epoch, Literal::Timestamp(0).Serialize());
+  ICEBERG_UNWRAP_OR_FAIL(auto tomorrow,
+                         Literal::Timestamp(internal::kMicrosPerDay).Serialize());
+  ICEBERG_UNWRAP_OR_FAIL(
+      auto wide, Literal::Timestamp(89'478'486LL * internal::kMicrosPerDay).Serialize());
+  DataFile file{
+      .record_count = 1, .lower_bounds = {{1, epoch}}, .upper_bounds = {{1, tomorrow}}};
+  EXPECT_TRUE(min->HasValue(file));
+  EXPECT_TRUE(max->HasValue(file));
+  ICEBERG_UNWRAP_OR_FAIL(auto low, min->Evaluate(file));
+  ICEBERG_UNWRAP_OR_FAIL(auto high, max->Evaluate(file));
+  EXPECT_EQ(low, Literal::Int(0));
+  EXPECT_EQ(high, Literal::Int(24));
+  file.upper_bounds[1] = wide;
+  for (const auto& agg : {min, max}) {
+    EXPECT_FALSE(agg->HasValue(file));
+    ICEBERG_UNWRAP_OR_FAIL(auto value, agg->Evaluate(file));
+    EXPECT_TRUE(value.IsNull());
+    auto accumulator = agg->NewAggregator();
+    ASSERT_TRUE(accumulator->Update(file).has_value());
+    EXPECT_FALSE(accumulator->IsValid());
+  }
 }
 
 TEST(AggregateTest, DataFileAggregatorParity) {
