@@ -28,6 +28,7 @@
 #include "iceberg/schema.h"
 #include "iceberg/test/matchers.h"
 #include "iceberg/type.h"
+#include "iceberg/util/temporal_util.h"
 
 namespace iceberg {
 
@@ -325,6 +326,43 @@ TEST(AggregateTest, AggregatesFromDataFileWithTransform) {
   EXPECT_EQ(std::get<int32_t>(results[0].value()), 20);
   EXPECT_EQ(std::get<int32_t>(results[1].value()), 0);
   EXPECT_TRUE(evaluator->AllAggregatorsValid());
+}
+
+TEST(AggregateTest, BucketExtremaRequireRows) {
+  Schema schema({SchemaField::MakeOptional(1, "ts", timestamp())});
+  auto bucket = Expressions::Bucket("ts", 16);
+  auto min = BindAggregate(schema, Expressions::Min(bucket));
+  auto max = BindAggregate(schema, Expressions::Max(bucket));
+  ICEBERG_UNWRAP_OR_FAIL(auto lower, Literal::Timestamp(0).Serialize());
+  ICEBERG_UNWRAP_OR_FAIL(auto upper,
+                         Literal::Timestamp(internal::kMicrosPerDay).Serialize());
+  DataFile file{
+      .record_count = 2, .lower_bounds = {{1, lower}}, .upper_bounds = {{1, upper}}};
+
+  for (const auto& agg : {min, max}) {
+    EXPECT_FALSE(agg->HasValue(file));
+    ICEBERG_UNWRAP_OR_FAIL(auto value, agg->Evaluate(file));
+    EXPECT_TRUE(value.IsNull());
+    auto aggregator = agg->NewAggregator();
+    ASSERT_TRUE(aggregator->Update(file).has_value());
+    EXPECT_FALSE(aggregator->IsValid());
+  }
+
+  ICEBERG_UNWRAP_OR_FAIL(auto rows, AggregateEvaluator::Make({min, max}));
+  ASSERT_TRUE(rows->Update(VectorStructLike({Scalar{int64_t{0}}})).has_value());
+  ASSERT_TRUE(
+      rows->Update(VectorStructLike({Scalar{internal::kMicrosPerDay}})).has_value());
+  ICEBERG_UNWRAP_OR_FAIL(auto results, rows->GetResults());
+  EXPECT_EQ(results[0], Literal::Int(2));
+  EXPECT_EQ(results[1], Literal::Int(12));
+
+  DataFile all_null{
+      .record_count = 2, .value_counts = {{1, 2}}, .null_value_counts = {{1, 2}}};
+  for (const auto& agg : {min, max}) {
+    EXPECT_TRUE(agg->HasValue(all_null));
+    ICEBERG_UNWRAP_OR_FAIL(auto value, agg->Evaluate(all_null));
+    EXPECT_TRUE(value.IsNull());
+  }
 }
 
 TEST(AggregateTest, DataFileAggregatorParity) {

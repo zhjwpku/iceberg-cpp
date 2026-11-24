@@ -30,6 +30,7 @@
 #include "iceberg/expression/literal.h"
 #include "iceberg/manifest/manifest_entry.h"
 #include "iceberg/row/struct_like.h"
+#include "iceberg/transform.h"
 #include "iceberg/type.h"
 #include "iceberg/util/checked_cast.h"
 #include "iceberg/util/macros.h"
@@ -56,8 +57,18 @@ class SingleValueStructLike : public StructLike {
   Literal literal_;
 };
 
+bool CanAggregateBounds(const BoundTerm& term) {
+  if (const auto* transform = dynamic_cast<const BoundTransform*>(&term)) {
+    return transform->transform()->PreservesOrder();
+  }
+  return term.kind() == Term::Kind::kReference;
+}
+
 Result<Literal> EvaluateBoundTerm(const BoundTerm& term,
                                   const std::optional<std::vector<uint8_t>>& bound) {
+  if (!CanAggregateBounds(term)) {
+    return Literal::Null(GetPrimitiveType(term));
+  }
   auto ptype = GetPrimitiveType(term);
   if (!bound.has_value()) {
     SingleValueStructLike data(Literal::Null(ptype));
@@ -417,7 +428,7 @@ std::unique_ptr<BoundAggregate::Aggregator> MaxAggregate::NewAggregator() const 
 
 bool MaxAggregate::HasValue(const DataFile& file) const {
   auto field_id = GetFieldId(term());
-  bool has_bound = file.upper_bounds.contains(field_id);
+  bool has_bound = file.upper_bounds.contains(field_id) && CanAggregateBounds(*term());
   auto value_count = GetMapValue(file.value_counts, field_id);
   auto null_count = GetMapValue(file.null_value_counts, field_id);
   bool all_null = value_count.has_value() && *value_count > 0 && null_count.has_value() &&
@@ -455,7 +466,7 @@ std::unique_ptr<BoundAggregate::Aggregator> MinAggregate::NewAggregator() const 
 
 bool MinAggregate::HasValue(const DataFile& file) const {
   auto field_id = GetFieldId(term());
-  bool has_bound = file.lower_bounds.contains(field_id);
+  bool has_bound = file.lower_bounds.contains(field_id) && CanAggregateBounds(*term());
   auto value_count = GetMapValue(file.value_counts, field_id);
   auto null_count = GetMapValue(file.null_value_counts, field_id);
   bool all_null = value_count.has_value() && *value_count > 0 && null_count.has_value() &&
